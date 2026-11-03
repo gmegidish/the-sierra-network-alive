@@ -89,8 +89,13 @@ function drawMember(vm, member) {
     return;
   }
   setRectProps(vm, member.id, rect);
-  const top = g.picPort.rect.top;
-  const screenRect = { top: rect.top + top, left: rect.left, bottom: rect.bottom + top, right: rect.right };
+  // Clip to the pic port: erasing a cel that overhangs the port (the Winter Map
+  // clouds) must not restore stale background over the status bar.
+  const port = g.picPort.rect;
+  const screenRect = {
+    top: Math.max(rect.top + port.top, port.top), left: Math.max(rect.left, port.left),
+    bottom: Math.min(rect.bottom + port.top, port.bottom), right: Math.min(rect.right, port.right),
+  };
   g.drawnCels.set(member.id, { rect: screenRect, key: drawKey(member) });
 }
 

@@ -102,3 +102,12 @@ test('the game cursor is the view the scripts set, drawn as an overlay outside t
   assert.notDeepEqual(withCursor, withoutCursor, 'the arrow is visible at the mouse position');
   assert.deepEqual(vm.screen.visual, framebufferBefore, 'the framebuffer itself is untouched');
 });
+
+const MAP_NAME_TEXT = Object.freeze({ COLOR: 10, LEFT: 198, RIGHT: 236 });
+
+test('erasing the Winter Map clouds leaves no stale pixels in the status bar before "Winter Map"', { skip: !existsSync(INSTALL_DIR) }, () => {
+  const { vm } = gilUpTo(WINTER_MAP_FRAME);
+
+  const barLeftOfName = pixelsInside(vm, { top: 0, left: MAP_NAME_TEXT.LEFT, bottom: STATUS_BAR_ROWS, right: MAP_NAME_TEXT.RIGHT });
+  assert.ok(!barLeftOfName.includes(MAP_NAME_TEXT.COLOR), 'no stray "." left of the map name');
+});
