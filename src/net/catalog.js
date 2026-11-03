@@ -16,10 +16,18 @@ import { decodeMessage, decodePassword } from './wire.js';
 export const CLIENT = Object.freeze({
   SEND: 2,
   RSEND: 3,
+  LOCK: 4,
   JOIN_NET: 7,
   LEAVE_NET: 9,
+  JOIN_GROUP: 10,
+  LEAVE_GROUP: 11,
+  WORD_PROPERTIES: 13,
+  STRING_PROPERTY: 14,
   OLD_LOGIN: 22,
+  SAID: 28,
   REGISTER: 30,
+  GET_MEMBERS: 31,
+  GET_OBJECT: 32,
   SESSION_34: 34,
   HOST_INFO: 36,
   SESSION_37: 37,
@@ -110,7 +118,61 @@ const CLIENT_DECODERS = {
   [CLIENT.LANDS]: { name: 'lands', decode: subWithWords },
   [CLIENT.PERSONA]: { name: 'persona', decode: (b) => zip(['type', 'sub', 'name'], decodeMessage('bbs', b)) },
   [CLIENT.CHANGE_PASSWORD]: { name: 'changePassword', decode: subWithBytes },
+  [CLIENT.SEND]: { name: 'send', decode: objectMessage },
+  [CLIENT.RSEND]: { name: 'rsend', decode: objectMessage },
+  [CLIENT.SAID]: { name: 'said', decode: objectMessage },
+  [CLIENT.LOCK]: { name: 'lock', decode: objectWords },
+  [CLIENT.JOIN_GROUP]: { name: 'joinGroup', decode: objectWords },
+  [CLIENT.LEAVE_GROUP]: { name: 'leaveGroup', decode: objectWords },
+  [CLIENT.WORD_PROPERTIES]: { name: 'setWordProperties', decode: wordProperties },
+  [CLIENT.STRING_PROPERTY]: { name: 'setStringProperty', decode: stringProperty },
+  [CLIENT.GET_MEMBERS]: { name: 'getMembers', decode: (b) => ({ ...objectHead(b), offsets: wordsFrom(b, OBJECT_PAYLOAD_OFFSET) }) },
+  [CLIENT.GET_OBJECT]: { name: 'getObject', decode: (b) => ({ ...objectHead(b), offsets: wordsFrom(b, OBJECT_PAYLOAD_OFFSET) }) },
 };
+
+/** Object messages: type b, sub b, toSid w, fromSid w (0xffff = public), payload from 6. */
+const OBJECT_PAYLOAD_OFFSET = 6;
+
+/** @param {Uint8Array} bytes */
+function objectHead(bytes) {
+  return zip(['type', 'sub', 'toSid', 'fromSid'], decodeMessage('bbww', bytes));
+}
+
+/** @param {Uint8Array} bytes @param {number} start @returns {number[]} LE words */
+function wordsFrom(bytes, start) {
+  const words = [];
+  for (let at = start; at + 1 < bytes.length; at += 2) {
+    words.push(bytes[at] | (bytes[at + 1] << 8));
+  }
+  return words;
+}
+
+/** @param {Uint8Array} bytes */
+function objectWords(bytes) {
+  return { ...objectHead(bytes), words: wordsFrom(bytes, OBJECT_PAYLOAD_OFFSET) };
+}
+
+/** 2 / 3 / 28: msgType w, then the message body. @param {Uint8Array} bytes */
+function objectMessage(bytes) {
+  const [msgType] = wordsFrom(bytes.subarray(OBJECT_PAYLOAD_OFFSET, OBJECT_PAYLOAD_OFFSET + 2), 0);
+  return { ...objectHead(bytes), msgType, body: hex(bytes.subarray(OBJECT_PAYLOAD_OFFSET + 2)) };
+}
+
+/** 13: (offset, value) word pairs. @param {Uint8Array} bytes */
+function wordProperties(bytes) {
+  const words = wordsFrom(bytes, OBJECT_PAYLOAD_OFFSET);
+  const properties = {};
+  for (let i = 0; i + 1 < words.length; i += 2) {
+    properties[words[i]] = words[i + 1];
+  }
+  return { ...objectHead(bytes), properties };
+}
+
+/** 14: offset w, then the zero-terminated text. @param {Uint8Array} bytes */
+function stringProperty(bytes) {
+  const [offset, text] = decodeMessage('ws', bytes.subarray(OBJECT_PAYLOAD_OFFSET));
+  return { ...objectHead(bytes), offset, text };
+}
 
 /** 'bbw+' style: type, sub, then LE words. @param {Uint8Array} bytes */
 function subWithWords(bytes) {
