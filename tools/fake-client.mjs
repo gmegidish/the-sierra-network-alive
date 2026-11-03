@@ -182,7 +182,7 @@ async function logIn({ link, host }, { password, number, name, stepTimeoutMs, lo
  */
 export async function runFakeClient(options = {}) {
   const config = {
-    url: DEFAULT_LINE_URL, password: '123456', number: DEFAULT_ACCOUNT, name: 'Gil',
+    url: DEFAULT_LINE_URL, password: 'XXXXXX', number: DEFAULT_ACCOUNT, name: 'Gil',
     log: console.log, stepTimeoutMs: STEP_TIMEOUT_MS, ...options,
   };
   const stack = buildClientStack(config.url, config.log);
@@ -206,7 +206,7 @@ function isRunAsScript() {
 }
 
 if (isRunAsScript()) {
-  const [url = DEFAULT_LINE_URL, password = '123456'] = process.argv.slice(2);
+  const [url = DEFAULT_LINE_URL, password = 'XXXXXX'] = process.argv.slice(2);
   const result = await runFakeClient({ url, password });
   console.log(result.isOnline ? 'RESULT: online' : `RESULT: failed (${result.failure})`);
   process.exitCode = result.isOnline ? 0 : 1;

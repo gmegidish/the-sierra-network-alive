@@ -1,32 +1,19 @@
-// Node only: the installed TSN worlds (CC root, LarryLand, SierraLand) as
-// resource managers, a land layered over the root like TSNEXEC's pathStr = ..\
-import { readFileSync } from 'node:fs';
+// Node only: the installed INN worlds (Clubhouse CC, CasinoLand LL,
+// SierraLand SL) as resource managers, each world's map over its own
+// RESOURCE.001 and the shared root RESOURCE.002 (with the world's patches).
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createResourceManager } from '../resource/resource-manager.js';
+import { readTree } from '../vm/node-loader.mjs';
+import { FileSystem } from '../vm/filesystem.js';
+import { createProgramResources } from '../vm/programs.js';
 import { RESOURCE_TYPE } from '../resource/types.js';
 
-export const INSTALL_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'installed', 'TSN');
+export const INSTALL_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'installed', 'INN');
 export const WORLDS = Object.freeze(['CC', 'LL', 'SL']);
-
-function openDirectory(directory) {
-  const path = (name) => join(INSTALL_DIR, directory, name);
-  return createResourceManager({ map: readFileSync(path('RESOURCE.MAP')), volumes: { 1: readFileSync(path('RESOURCE.001')) } });
-}
 
 /** @param {'CC' | 'LL' | 'SL'} world */
 export function openWorld(world) {
-  const root = openDirectory('');
-  if (world === 'CC') {
-    return root;
-  }
-  const land = openDirectory(world);
-  const pick = (type, number) => (land.has(type, number) ? land : root);
-  return {
-    has: (type, number) => land.has(type, number) || root.has(type, number),
-    get: (type, number) => pick(type, number).get(type, number),
-    list: () => land.list(),
-  };
+  return createProgramResources(new FileSystem(readTree(INSTALL_DIR)), world);
 }
 
 export function soundNumbersOf(resources) {

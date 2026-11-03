@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Write installed/TSN/manifest.json for the browser front end (src/web/main.js):
+// Write installed/INN/manifest.json for the browser front end (src/web/main.js):
 // the root files it fetches, the files of LSCI land directories (those with a
 // RESOURCE.MAP, e.g. SL and LL, run by TSN.PRG programs) and every directory name.
-// Usage: node tools/make-manifest.mjs [installDir=installed/TSN]
+// Usage: node tools/make-manifest.mjs [installDir=installed/INN]
 import { readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,7 +22,7 @@ function landDirectoryFiles(dir, sub, isSmallFile) {
 }
 
 function main() {
-  const dir = process.argv[2] ?? join(ROOT, 'installed', 'TSN');
+  const dir = process.argv[2] ?? join(ROOT, 'installed', 'INN');
   const entries = readdirSync(dir).filter((name) => name !== MANIFEST);
   const isDirectory = (name) => statSync(join(dir, name)).isDirectory();
   const isSmallFile = (path) => !statSync(path).isDirectory() && statSync(path).size <= MAX_FILE_SIZE;

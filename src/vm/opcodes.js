@@ -120,6 +120,8 @@ function executeControl(interp, frame, opcode, small) {
       return true;
     }
     case 0x2c: pushRest(interp, frame, interp.operand(frame, small)); return true;
+    // 1995 debug info (INN scripts): 0x26 line number, 0x27 module number; nothing to do.
+    case 0x26: case 0x27: interp.operand(frame, small); return true;
     case 0x2e: interp.acc = frame.self; return true;
     case 0x30: interp.push(interp.prev); return true;
     default: return false;

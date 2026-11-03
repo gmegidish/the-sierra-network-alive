@@ -8,7 +8,7 @@ import {
   encodePassword, decodePassword, MAX_ESCAPED_PAYLOAD,
 } from './wire.js';
 
-const PASS_SET_PATH = fileURLToPath(new URL('../../installed/TSN/PASS_SET.DTA', import.meta.url));
+const PASS_SET_PATH = fileURLToPath(new URL('../../installed/INN/PASS_SET.DTA', import.meta.url));
 const PASS_SET_HEADER_LENGTH = 2;
 
 function bytesOf(text) {
@@ -133,12 +133,12 @@ test('decodeMessage reads back what encodeMessage wrote', () => {
   assert.deepEqual(decodeMessage('bbws+', bytes), [40, 4, 300, 'Bob', [1, 2]]);
 });
 
-test('password "123456" encodes to the bytes stored in the shipped PASS_SET.DTA', () => {
-  assert.equal(hex(encodePassword('123456')), hex(encodedPasswordStoredInPassSetFile()));
+test('password "XXXXXX" encodes to the bytes stored in the shipped INN PASS_SET.DTA', () => {
+  assert.equal(hex(encodePassword('XXXXXX')), hex(encodedPasswordStoredInPassSetFile()));
 });
 
-test('the shipped PASS_SET.DTA decodes back to "123456"', () => {
-  assert.equal(decodePassword(encodedPasswordStoredInPassSetFile()), '123456');
+test('the shipped INN PASS_SET.DTA decodes back to "XXXXXX"', () => {
+  assert.equal(decodePassword(encodedPasswordStoredInPassSetFile()), 'XXXXXX');
 });
 
 test('passwords are upper-cased before scrambling', () => {

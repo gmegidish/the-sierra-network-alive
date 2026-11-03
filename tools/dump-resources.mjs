@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Dump every resource of TSN's root "CC" world (disk/1) into out/:
+// Dump every resource of one INN world (installed/INN/CC, LL or SL: its map
+// over its RESOURCE.001 and the root RESOURCE.002, patches applied) into out/:
 //   out/resources.txt         type, number, sizes, compression, source
 //   out/pic/picN.png          visual plane (+ .priority.png / .control.png)
 //   out/view/viewN.png        first cel of every loop
@@ -7,27 +8,25 @@
 //   out/text/textN.txt        text strings
 //   out/vocab/*.txt           selectors, opcodes, class table, kernel names
 //   out/module/N.txt          module block listing + disassembly
-// Usage: node tools/dump-resources.mjs [gameDir] [outDir] [patchDir...]
-import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+// Usage: node tools/dump-resources.mjs [world=CC] [outDir=out (CC) or out/<world>]
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  createResourceManager, RESOURCE_TYPE, resourceTypeName, decodePalette, decodeView, renderPic,
+  RESOURCE_TYPE, resourceTypeName, decodePalette, decodeView, renderPic,
   decodeFont, decodeText, decodeSelectorNames, decodeOpcodeNames, decodeClassTable, VOCAB, KERNEL_NAMES,
 } from '../src/resource/index.js';
 import { encodePng } from './png.mjs';
 import { planeToRgba, picToRgba, viewFirstCelsSheet, fontSheet } from './resource-images.mjs';
 import { formatModuleListing } from './module-listing.mjs';
+import { readTree } from '../src/vm/node-loader.mjs';
+import { createProgramResources } from '../src/vm/programs.js';
+import { FileSystem } from '../src/vm/filesystem.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_GAME_DIR = join(ROOT, 'disk', '1');
-const DEFAULT_OUT_DIR = join(ROOT, 'out');
-const DEFAULT_PATCH_DIRS = [join(ROOT, 'disk', '4', 'CCPATCH')];
+const INSTALL_DIR = join(ROOT, 'installed', 'INN');
+const DEFAULT_WORLD = 'CC';
 const SYSTEM_PALETTE = 999;
-
-function loadPatchFiles(dirs) {
-  return dirs.flatMap((dir) => readdirSync(dir).map((name) => ({ name, bytes: readFileSync(join(dir, name)) })));
-}
 
 function writeFile(path, content) {
   mkdirSync(dirname(path), { recursive: true });
@@ -55,9 +54,22 @@ function countByType(resources) {
   return [...counts.entries()].map(([type, count]) => `${type}=${count}`).join(' ');
 }
 
+/** SierraLand's pics 952-972 start "NN 80 00 00 00 00", some other format (like sounds 728/729). */
+function renderPicOrSkip(rm, number) {
+  try {
+    return renderPic(rm.get(RESOURCE_TYPE.PIC, number));
+  } catch (error) {
+    process.stderr.write(`pic ${number}: ${error.message} (skipped)\n`);
+    return null;
+  }
+}
+
 function dumpPics(rm, outDir, basePalette) {
   for (const { number } of rm.list().filter((r) => r.type === RESOURCE_TYPE.PIC)) {
-    const pic = renderPic(rm.get(RESOURCE_TYPE.PIC, number));
+    const pic = renderPicOrSkip(rm, number);
+    if (!pic) {
+      continue;
+    }
     const base = join(outDir, 'pic', `pic${number}`);
     writeFile(`${base}.png`, encodePng(pic.width, pic.height, picToRgba(pic, basePalette)));
     writeFile(`${base}.priority.png`, encodePng(pic.width, pic.height, planeToRgba(pic.priority)));
@@ -105,18 +117,19 @@ function dumpVocabs(rm, outDir) {
 
 function dumpModules(rm, outDir, names) {
   for (const { number } of rm.list().filter((r) => r.type === RESOURCE_TYPE.MODULE)) {
-    writeFile(join(outDir, 'module', `${number}.txt`), formatModuleListing(rm.get(RESOURCE_TYPE.MODULE, number), names));
+    // Module numbers 1904+ in LL are views 6000+ (16-bit resource ids wrap), not modules.
+    try {
+      writeFile(join(outDir, 'module', `${number}.txt`), formatModuleListing(rm.get(RESOURCE_TYPE.MODULE, number), names));
+    } catch (error) {
+      process.stderr.write(`module ${number}: ${error.message} (skipped)\n`);
+    }
   }
 }
 
 function main() {
-  const [gameDir = DEFAULT_GAME_DIR, outDir = DEFAULT_OUT_DIR, ...patchArgs] = process.argv.slice(2);
-  const patchDirs = patchArgs.length ? patchArgs : DEFAULT_PATCH_DIRS;
-  const rm = createResourceManager({
-    map: readFileSync(join(gameDir, 'RESOURCE.MAP')),
-    volumes: { 1: readFileSync(join(gameDir, 'RESOURCE.001')) },
-    patches: loadPatchFiles(patchDirs),
-  });
+  const [world = DEFAULT_WORLD, outArg] = process.argv.slice(2);
+  const outDir = outArg ?? (world === DEFAULT_WORLD ? join(ROOT, 'out') : join(ROOT, 'out', world));
+  const rm = createProgramResources(new FileSystem(readTree(INSTALL_DIR)), world);
   const resources = rm.list();
   for (const r of resources) {
     rm.get(r.type, r.number);

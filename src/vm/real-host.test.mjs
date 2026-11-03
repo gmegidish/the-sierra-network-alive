@@ -1,14 +1,12 @@
 // Integration: the VM dials the real host logic (server/session.js) through
 // LineHost, the X.28 PAD and LinkEndpoint framing, joined by an in-memory
-// line instead of a WebSocket. Login must reach the TSN map (pic 50) with no
-// LandAddr loop. Skipped when installed/TSN is missing.
+// line instead of a WebSocket. Login must reach the Winter Map (pic 52) with no
+// LandAddr loop. Skipped when installed/INN is missing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createVmFromDirectory } from './node-loader.mjs';
-import { EVENT_TYPE } from './events.js';
+import { INSTALL_DIR, act, toTheWinterMapAs, WINTER_MAP_FRAME } from './headless-session.mjs';
 import { LineHost } from '../net/line-host.js';
 import { HostSession, STAGE } from '../../server/session.js';
 
@@ -19,13 +17,9 @@ import { HostSession, STAGE } from '../../server/session.js';
  * @property {() => HostSession | null} session
  */
 
-const INSTALL_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'installed', 'TSN');
 const MS_PER_FRAME = 1000 / 60;
 const INSTRUCTIONS_PER_FRAME = 20000;
-const PLAY_BUTTON = Object.freeze({ x: 282, y: 66 });
-const PLAYER_SCREEN_FRAME = 650;
-const MAP_FRAME = 2400;
-const MAP_PIC = 50;
+const MAP_PIC = 52;
 const LAND_ADDR_REQUEST = '36/6';
 
 /** @param {() => number} now @returns {InMemoryLine} */
@@ -71,8 +65,12 @@ function bootAgainstRealHostLogic() {
     drawPic(number, clear);
   };
   vm.boot();
+  const script = new Map(toTheWinterMapAs('Gil'));
   const runFrames = (count) => {
-    for (let i = 0; i < count; i++) {
+    for (let frame = 0; frame < count; frame++) {
+      if (script.has(frame)) {
+        act(vm, script.get(frame));
+      }
       vm.runSlice(INSTRUCTIONS_PER_FRAME);
       line.deliver();
       clock += MS_PER_FRAME;
@@ -81,21 +79,14 @@ function bootAgainstRealHostLogic() {
   return { vm, host, line, drawnPics, runFrames };
 }
 
-function clickAt(vm, { x, y }) {
-  vm.events.push({ type: EVENT_TYPE.MOUSE_DOWN, message: 0, x, y });
-  vm.events.push({ type: EVENT_TYPE.MOUSE_UP, message: 0, x, y });
-}
-
 /** @param {LineHost} host @param {string} typeAndSub */
 function timesClientSent(host, typeAndSub) {
   return host.log.filter(({ kind, detail }) => kind === 'packet' && detail.startsWith(`${typeAndSub} `)).length;
 }
 
-test('login through the real host session over the link layer reaches the TSN map', { skip: !existsSync(INSTALL_DIR) }, () => {
+test('login through the real host session over the link layer reaches the Winter Map', { skip: !existsSync(INSTALL_DIR) }, () => {
   const { vm, host, line, drawnPics, runFrames } = bootAgainstRealHostLogic();
-  runFrames(PLAYER_SCREEN_FRAME);
-  clickAt(vm, PLAY_BUTTON);
-  runFrames(MAP_FRAME - PLAYER_SCREEN_FRAME);
+  runFrames(WINTER_MAP_FRAME);
 
   assert.equal(vm.interp.halted, false);
   assert.equal(host.state, 'online', 'the PAD call connected');

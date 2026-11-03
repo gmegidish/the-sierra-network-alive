@@ -1,7 +1,10 @@
 # LSCI VM (src/vm/)
 
-A JavaScript interpreter for the LSCI bytecode of The Sierra Network's
-LSCITV.EXE. It runs the CC (root) world in the browser and headless in Node.
+A JavaScript interpreter for the LSCI bytecode of The ImagiNation Network's
+LSCITV.EXE (the May 1995 build, ImagiNation v2.4, installed in
+`installed/INN`). It runs the Clubhouse (`CC`), CasinoLand (`LL`) and
+SierraLand (`SL`) worlds in the browser and headless in Node. The 1992 TSN
+v2.1 build is no longer the target.
 It is plain ES modules with no dependencies and no build step.
 
 Ground truth is the LZEXE-unpacked LSCITV.EXE. The data segment is 0x1b14.
@@ -14,7 +17,7 @@ stock SCI1.1, ScummVM was used as a cross-check.
 
 ```
 npm install                    # once, for the local TSN host (express, ws)
-node tools/make-manifest.mjs   # once: writes installed/TSN/manifest.json
+node tools/make-manifest.mjs   # once: writes installed/INN/manifest.json
 npm run server                 # serves the repo on http://127.0.0.1:7000/ plus the /line WebSocket
 open http://127.0.0.1:7000/    # index.html
 ```
@@ -34,7 +37,7 @@ Any static server works if you only want the in-page fake host, for example
 ```
 node tools/run-headless.mjs [frames=600] [instructionsPerFrame=20000] [screenshotEvery=60] [input]
 # input: "frame@x,y" clicks, "frame@key:code" keys and "frame@text:abc" typing, separated by ";"
-node tools/run-headless.mjs 2600 20000 650 "650@282,66"   # boot, click Play, log in, TSN map
+node tools/run-headless.mjs 9400 20000 500 "<the persona script below>"   # new persona, Play, log in, Winter Map
 ```
 
 The headless runner uses virtual time: one frame is 1/60 s. It writes the
@@ -54,11 +57,13 @@ following to `out/run/`:
 
 - `src/vm/opcodes.test.mjs`: hand-assembled bytecode.
 - `src/vm/objects.test.mjs`: dispatch, super, clones.
-- `src/vm/boot.test.mjs`: boots CC, clicks Play, and asserts that login and joinNet go out and pic 50 is drawn; the status bar fills rows 0-9; the Select Player card shows the face and the "Gil" strip (not the empty card yellow); the cursor overlay draws view 897 without touching the framebuffer.
-- `src/vm/real-host.test.mjs`: the same login against `server/session.js` over LinkEndpoint and the X.28 PAD, joined by an in-memory line; asserts room 50 and a single 36/6.
-- `src/vm/lands.test.mjs`: TSN.PRG, directory views, edit keys, raw Array copy, and map -> LarryLand chooser -> LarryLand player screen.
+- `src/vm/headless-session.mjs` (helper): a headless INN client on virtual time that follows program switches, driven by frame -> input scripts; the scripted ways into the Winter Map and each land live here.
+- `src/vm/boot.test.mjs`: creates a Clubhouse persona, clicks Play, and asserts that login and joinNet go out and the Winter Map (pic 52) is drawn; the status bar fills rows 0-9; the Select Player card shows the face and the "Gil" strip; the cursor overlay draws view 897 without touching the framebuffer.
+- `src/vm/real-host.test.mjs`: the same login against `server/session.js` over LinkEndpoint and the X.28 PAD, joined by an in-memory line; asserts pic 52 and a single 36/6.
+- `src/vm/lands.test.mjs`: TSN.PRG, directory views, edit keys, raw Array copy; map -> CasinoLand chooser -> CasinoLand player screen; SierraLand's waiting room; a Clubhouse room.
+- `src/vm/larryland-games.test.mjs`: CasinoLand Slots (seed 22) and BlackJack (seed 2).
 - `src/net/fake-server.test.mjs`: shared host logic (SIDs, land list, groups, member properties).
-- `src/vm/multiplayer.test.mjs`: two headless clients on one `World` (each with its own `FakeServer({ world })`): both reach the LarryLand waiting room, Gil's client learns Kris's name, Gil talks and Kris's client gets the line; then Kris opens a BlackJack table, Gil joins, and both screens show the same deal and result (~30 s).
+- `src/vm/multiplayer.test.mjs`: two headless clients on one `World` (each with its own `FakeServer({ world })`): both reach the CasinoLand waiting room, Gil's client learns Kris's name, Gil talks and Kris's client gets the line; then Kris opens a BlackJack table, Gil joins, and both screens show the same deal and result (~30 s).
 
 ## Architecture
 
@@ -153,65 +158,85 @@ Every kernel number from 0 to 92 has an entry. The EXE's own table stops at
 
 Cel scaling is ignored.
 
-## How far boot gets
+## The 1995 build (INN) vs the 1992 one
 
-Headless run: `node tools/run-headless.mjs 2600 20000 650 "650@282,66"`.
+**Layout.** Each world (CC, LL, SL) has a RESOURCE.MAP indexing volume 1 (its
+own RESOURCE.001) and volume 2 (the shared root RESOURCE.002); the root has no
+map. `createProgramResources` (programs.js) builds that, with the compiled
+`NNN.SO` patches of the root and the world (CC/50.SO, CC/120.SO; 913.SO is
+script *source* and is skipped). TSN.PRG's DEFAULT program does `cd CC`, so
+the first VM already runs in CC. LSCI.CFG's `pathStr = ..\` is honoured by
+FileSystem: a file missing in the world directory is read from the root.
 
-1. **Frame 650, the Select Player screen** (`out/run/frame0650.png`). It shows
-   the "ImagiNation v2.1" title, the player card and the Play, Change, Create,
-   Delete, Exit, Print and Help buttons. PLAYER.DIR, GAME.CFG and the persona
-   `Gil.DTA` have been read.
-2. **Clicking Play opens the dial screen** (pic with the satellite). TSN(0)
-   reports linkType 3 (modem). The client dials `ATZtSIERRAATDT1!~`.
-3. **The client logs in**:
-   - it sends login 53 and gets the host's reply;
-   - it sends joinNet 7 and receives SID 256;
-   - it sends the startup burst: 36/5, 45/1, 36/1, 36/6, 37/32 and 40/4;
-   - it receives the land list and the done message;
-   - it sends 47/1 and receives done.
-4. **Frame 2600, the TSN map** (pic 50, `out/run/headless-room50.png`):
-   - the status bar ("ImagiNation v2.1 / Map") is drawn at rows 0-9 through
-     the screen port (`SetPort(-1)`, module 0 block 74); the picture starts at row 10;
-   - the hotspots respond to clicks: LarryLand, SierraLand, MedievalLand, the Clubhouse, the Mall, the Post Office and others.
-5. **The land chooser.** Clicking LarryLand (80, 30) or SierraLand (286, 90)
-   lists that land from LandAddr (`out/run/land-chooser.png`).
-6. **Entering a land.** Picking the first entry (80, 90) sends joinNet and leaveNet
-   9, calls TSN(9, "LLand") and quits. `nextProgramVm` boots LSCITV again in
-   `LL` (or `SL`) with the land's own resources, and the land shows its
-   Select Player screen (`out/run/larryland-player.png`, `sierraland-player.png`).
-7. **Inside a land.** Create a persona (form with edit fields, appearance,
-   hobbies, Save), click Play, pick a game, OK. The land joins its waiting-room
-   group and reaches the **Waiting Room** (`out/run/larryland-waiting-room.png`,
-   `sierraland-waiting-room.png`): the Talk / Look / Play / Go to / Options
-   panel responds. The waiting rooms are chat-and-games hubs, not walkable
-   rooms.
+**Kernel table.** LSCITV.EXE unpacks (LZEXE) to 146980 bytes; the kernel name
+table is at 0x1c71e (1993: 0x1c1ba), handlers (off, seg pairs) at 0x226a6.
+All 89 kernel names and their order are unchanged. Differences found by
+comparing handler bodies and jump-table bounds:
 
-The same flow runs in the browser against `npm run server`
-(`out/run/browser-room50.png`, `out/run/browser-larryland.png`).
+| kernel | 1993 | 1995 |
+|---|---|---|
+| String | sub-ops 0-4 (if chain) | 0-11 (jump table); 11 = getToken (Str getToken, module 60001 block 24), implemented |
+| FileSystem | 0-15 | 0-17 (16/17 unseen, not implemented) |
+| TextSize | | only adds resource lock/unlock |
+| Graph 12, TSN 16, Sound 14 sub-ops | same bounds | same |
 
-The headless input for LarryLand, up to the waiting room:
+**Opcodes.** 0x26 and 0x27 take a word operand: debug line / debug module
+info (`4e 32 00` = module 50, `4c 15 01` = line 277), emitted at the start of
+every code block. The interpreter skips them; the disassembler names them.
+
+**Selectors** were renumbered (e.g. `money` 598 -> 602); tests look them up by
+name (`vm.sel('money')`).
+
+**Behaviour fixes found on the way:**
+
+- *Text box width.* Like ScummVM's GfxText16::Size, an explicit wrap width is
+  the box width for both TextSize and Display, so `Display ... 106 w 101 1`
+  centres in w: the status bar centres "ImagiNation v2.4" in 320, buttons
+  centre their label in their width (sizeToStr + centerIn give the button rect).
+- *Icon controls* (type 4) draw only their cel.
+- *Freed memory.* A freed ID keeps its contents until reused: WhoUAre::dispose
+  reads its locals after `super dispose` unloaded its module, and without that
+  the LookLikeDialog was never disposed, g71 stayed 1 and NetMsgProcessor
+  queued every host message instead of handling it (module 59957: with g71 set
+  only command-2 messages are dispatched directly).
+
+## How far it gets
+
+Headless, with `tools/run-headless.mjs` (one frame = 1/60 s). A new persona and
+the Winter Map (`src/vm/headless-session.mjs` `toTheWinterMapAs`):
 
 ```
-650@282,66;2450@80,30;2600@80,90;3500@125,190;4250@text:Gil;4300@125,109;4320@text:30;
-4350@165,122;4370@text:Explorer;4400@147,135;4420@text:1234;4460@127,152;4900@90,188;
-5300@90,188;5700@90,188;5950@225,188;6700@25,190;7500@115,92;7520@205,92;7600@210,141
+1250@298,137;2700@243,124;3100@285,93;3900@text:Gil;3950@117,120;3970@text:30;
+4000@150,132;4020@text:Explorer;4100@124,162;4400@285,74;5300@285,76;6300@285,76;
+7300@285,130;8500@285,58
 ```
 
-Then `8600@285,120;9100@205,78` (Play, Slots) creates a game and enters the
-Slots room (`out/run/larryland-slots-room.png`), and `10200@95,70` opens the
-"Grab the Cash" machine. `10800@122,133;10900@163,47` raises the bet to 2 and
-pulls; with `SEED=22` that is three cherries, +10 (`larryland-slots-win.png`).
-BlackJack instead: `9100@115,78`, then `10100@22,22` (a 5 chip) and
-`10950@130,55` (Stand); with `SEED=1` the dealer busts (`larryland-blackjack-win.png`).
-src/vm/larryland-games.test.mjs runs both.
+1. Welcome OK, no guide, Create, name / age / city, face, skills, hobbies,
+   Save: the Select Player screen (frame 8400) with the persona card.
+2. Play dials ("Modem Connect"), logs in (53), joins (7), sends the startup
+   burst (36/5, 45/1, 36/1, 36/6, 37/32, 40/4, 36/7) and 47/1; the **Winter
+   Map** (pic 52; the season follows the clock) is up by frame 9300.
+3. **Clubhouse**: `9300@185,150;9800@80,96;10500@110,92;10550@200,160` (the
+   lodge, INN Help Room, tick a game, OK): its Waiting Room (pic 100) in the
+   same program, with Talk / Look / Invite / Watch.
+4. **CasinoLand**: `9300@55,40;9600@219,115;9900@80,96` (the casino, no access
+   password, High Rollers) switches to program LLand; a CasinoLand persona and
+   Play reach its Waiting Room by 15900 (`toTheCasinoLandWaitingRoomAs`). From
+   there Play, Slots (`15950@285,120;16500@205,78;17550@95,70`) and
+   `18200@122,133;18300@163,47` (bet 2, pull; seed 22 wins 4), or BlackJack
+   (`16500@115,78;17500@22,22;18350@130,55`; seed 2 wins 5).
+5. **SierraLand**: `9300@275,80;9800@80,96` switches to program SLand; its
+   persona and Play reach the Waiting Room (pic 120) by 15900.
+
+The same flow runs in the browser against `npm run server`.
 
 **Resource ids.** LSCI ids are `(type << 11) + number` truncated to 16 bits,
-so view 6000 (a LarryLand face) has the same id as module 1904, and the map
+so view 6000 (a CasinoLand face) has the same id as module 1904, and the map
 decodes it as that. The interpreter looks resources up by id, so the
 resource manager falls back to the id when the decoded (type, number) misses.
 
-Known script-level errors: writes to a freed object ($11bc, $1998) and `view`
-sends to freed objects when rooms are disposed. They are harmless.
+Known script-level errors: writes to freed objects and `view` sends to freed
+objects when rooms are disposed. They are harmless.
 
 ## Observed TSN calls and packets (fake host)
 
@@ -220,7 +245,7 @@ sends to freed objects when rooms are disposed. They are harmless.
 | TSN(0) status | — | `0x0103` once connected (low byte 3 = modem; anything other than 1/2/3 gives "Comm driver problems.") |
 | TSN(7) disconnect | — | first call of dialScript |
 | TSN(3) connect | `"ATZtSIERRAATDT1!~"` (prefix `t` + hostID `SIERRA` + modem init/dial strings from TSN.CFG) | 1 |
-| 53/0 login `bbwbbbbwwbas` | 53, 0, 0, number 1, ver 2.1.17, g262 1, g261 0, pwFromFile 1, 11, scrambled pw (= "123456"), "Gil" | `00 00 00 00 16 <priv w> 00 <landAccess w>` |
+| 53/0 login `bbwbbbbwwbas` | 53, 0, 0, number 1, ver 2.4.46, 123, 0, pwFromFile 1, 11, scrambled pw (= "XXXXXX", the INN PASS_SET.DTA), "Gil" | `00 00 00 00 16 <priv w> 00 <landAccess w>` |
 | 7 joinNet `wwwbbww` | 7, 0, objID 88 (CC), flags 0x81, number 1, 0, 12 | `08 00 58 00 00 00 <sid w>` |
 | 36/5 `bb` | — | `24 05 01 00` (host number 1) |
 | 45/1 `bbw` | sid | none |
@@ -228,6 +253,7 @@ sends to freed objects when rooms are disposed. They are harmless.
 | 36/6 `bbw+` | 0, 0 (landaddr.tim absent) | land list (47/2), then `01 00 00 00 24 06` |
 | 37/32 `bbw+` | 0, 0, 0 | none |
 | 40/4 `bbs` | persona "Gil" | none |
+| 36/7 `bbw+` | gameinfo.tim stamp | `24 07 00 00` (short form: "current"; module 101 dialScript state 7 waits for any 36/7) |
 | 47/1 `bbw+` and `bbww` | 0, 0 (sent twice) | land info (cmd 47 msgType 1), then `01 00 00 00 2F 01` |
 | TSN(8) poll, TSN(14) flush | every game cycle once connected | — |
 
@@ -239,7 +265,7 @@ sends to freed objects when rooms are disposed. They are harmless.
   `2F 02 <toSid w> 00 00 | 00 00 00 00 <count w> records...`.
 - **Land access.** The login reply's word@8 becomes g253, the land access
   mask. Land n is allowed when bit (n-1) is set (module 50 block 206). With
-  w8 = 1 only the Clubhouse is allowed, and it isn't installed, so the map
+  w8 = 1 only the Clubhouse is allowed, and the map for the others
   says "no access rights". FakeServer sends 0xffff.
 - **Messages to SID 0.** Messages addressed to SID 0 (login replies) reach the
   game object through `SID(3, 0)`.
@@ -249,14 +275,13 @@ sends to freed objects when rooms are disposed. They are harmless.
 1. **Money persistence.** LL's money file lives in the in-memory filesystem,
    so a reload asks the bank again (see 7).
 2. **Roulette and Poker**, untried.
-3. **TSN Clubhouse.** Program `Sierr` runs the root again, but the map says
-   "TSN Clubhouse has not been installed"; find what module 50 checks
-   (LAND.CFG directory `.`).
+3. **Clubhouse games** (Bridge, Chess, ...): the room is reached, the games are untried.
 4. **Other players.** Presence, talk, joining a game and BlackJack between
    two clients work (docs/server.md "Multiplayer"). Not yet: paging and "has
    just logged in" (module 59953), the waiting-room head count, Poker/Roulette
    and SierraLand games over the net, bots that play.
-5. **Graph sub-ops** 0, 2, 5, 8, 9 and 13, plus Kernel90-92. Display mode 1 centres button labels inside their width, but in DOSBox the Select Player button labels sit at their x; unexplained (0x50a:0x55a reads as centring).
+5. **Graph sub-ops** 0, 2, 5, 8, 9 and 13, plus Kernel90-92; FileSystem 16/17 and String 5-10 of the 1995 build are not implemented (not seen called yet).
+8. **Unknown formats**: SierraLand pics 952-972 and sounds 728/729 start `NN 80 00 00 00 00` (not SCI pic/sound data); the dump skips them and the games using them are untried.
 6. **Sound** is being added separately (src/audio/, kernel/sound.js).
 7. **Persistence.** Save in-memory filesystem writes (PLAYER.DIR, *.DTA,
    landaddr.tim) to IndexedDB in the browser.

@@ -36,6 +36,7 @@ export const CLIENT_SUB = Object.freeze({
   HOST_NUMBER_REQUEST: 5,  // 36/5
   HOST_ADDR: 1,            // 36/1
   LAND_ADDR: 6,            // 36/6
+  GAME_INFO: 7,            // 36/7 (INN): gameinfo.tim stamp
   SESSION_45_SID: 1,       // 45/1
   FLAGS_18: 18,            // 37/18
   FLAGS_32: 32,            // 37/32
@@ -59,6 +60,7 @@ export const HOST = Object.freeze({
 export const HOST_LANDS_SUB = Object.freeze({ INFO: 1, LIST: 2 });
 /** Host 36 type 5 carries the host number word at offset 2. */
 export const HOST_INFO_HOST_NUMBER = 5;
+export const HOST_INFO_GAME_INFO = 7;
 /** Login replies name the old login type 22 as whichCmd (byte 4). */
 export const LOGIN_WHICH_CMD = 22;
 export const LOGIN_BAD_PASSWORD_SUB = 9;

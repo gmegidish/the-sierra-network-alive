@@ -81,8 +81,8 @@ test('a second joinNet (a game group) gets its own SID but the session keeps the
 
 const SESSION_SID = 259;
 
-/** The login packet the CC client sends (scrambled password "123456"), for player `name`. */
-const LOGIN_HEAD = [0x35, 0, 0, 0, 1, 2, 1, 0x11, 1, 0, 0, 0, 1, 6, 0x7d, 0x7a, 0x7b, 0x7a, 0x7a, 0, 0, 0, 0, 0];
+/** The login packet the INN Clubhouse client (v2.4.46) sends (scrambled password "XXXXXX"), for player `name`. */
+const LOGIN_HEAD = [0x35, 0, 0, 0, 1, 2, 4, 0x2e, 0x7b, 0, 0, 0, 1, 0x68, 0x7e, 0x12, 0x7f, 0x13, 0x7d, 0, 0, 0, 0, 0];
 
 /** Log in as `name`, as the CC client does before any land starts. */
 function logInAs(server, name) {

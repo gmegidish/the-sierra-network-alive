@@ -2,16 +2,14 @@
 // 320x200 framebuffer into a canvas and feed it mouse/keyboard input.
 // ?host=fake uses the in-page FakeServer instead of the local TSN host
 // (npm run server, ws://localhost:7000/line).
-import { Vm } from '../vm/vm.js';
-import { createRootResources } from '../vm/root-resources.js';
 import { FakeServer } from '../net/fake-server.js';
 import { LineHost } from '../net/line-host.js';
 import { attachInput } from './input.js';
-import { nextProgramVm } from '../vm/programs.js';
+import { nextProgramVm, createInstallVm } from '../vm/programs.js';
 import { drawCursor } from '../gfx/cursor.js';
 import { startAudio } from '../audio/web-audio.js';
 
-const INSTALL_URL = 'installed/TSN/';
+const INSTALL_URL = 'installed/INN/';
 const INSTRUCTIONS_PER_FRAME = 20000;
 const DIRECTORY_MARKER = '.';
 
@@ -79,7 +77,7 @@ async function main() {
     statusLine.textContent = text;
   };
   const files = await fetchInstall(status);
-  const vm = new Vm({ resources: createRootResources(files), files, server: createHost() });
+  const vm = createInstallVm(files, { server: createHost() });
   window.tsnVm = vm;
   const canvas = document.getElementById('screen');
   // Input goes to whichever program is running (window.tsnVm changes on a land switch).

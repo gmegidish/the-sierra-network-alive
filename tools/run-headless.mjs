@@ -17,7 +17,7 @@ import { drawCursor } from '../src/gfx/cursor.js';
 import { createRandom } from '../src/vm/random.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const INSTALL_DIR = join(ROOT, 'installed', 'TSN');
+const INSTALL_DIR = join(ROOT, 'installed', 'INN');
 const OUT_DIR = join(ROOT, 'out', 'run');
 const MS_PER_FRAME = 1000 / 60;
 

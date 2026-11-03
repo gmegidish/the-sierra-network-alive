@@ -11,8 +11,8 @@ npm run fake-client     # in a second terminal: dial, log in, reach "online"
 npm run test:server
 ```
 
-Environment: `PORT` (default 7000) and `TSN_PASSWORD` (default `123456`, the
-password stored in the shipped `PASS_SET.DTA`). The server binds to 127.0.0.1
+Environment: `PORT` (default 7000) and `TSN_PASSWORD` (default `XXXXXX`, the
+password stored in the shipped `installed/INN/PASS_SET.DTA`). The server binds to 127.0.0.1
 only and refuses WebSocket upgrades whose `Origin` is not localhost/127.0.0.1.
 
 ## Layout
@@ -30,7 +30,7 @@ only and refuses WebSocket upgrades whose `Origin` is not localhost/127.0.0.1.
 | `src/net/host-logic.js` | shared | `HostLogic`: one decoded client message in, replies out; used by `HostSession` and, in-process, by `FakeServer` |
 | `src/net/host-objects.js` | shared | host state of networked objects: properties (13/14) and group membership (10/11) |
 | `src/net/world.js` | shared | `World`: the SIDs, groups and properties every session of one server shares, and routing between sessions |
-| `src/net/bots.js` | shared | host-side bot players (waiting rooms, canned talk replies) |
+| `src/net/bots.js` | shared | host-side bot players (waiting rooms, canned talk replies, accepting invitations) |
 | `server/session.js` | server | `HostSession`: PAD, then LinkEndpoint, then `HostLogic` |
 | `tools/fake-client.mjs` | Node | the client stack end to end, without the VM |
 
@@ -125,11 +125,15 @@ const link = new LinkEndpoint({
 | 37/19 `[37, 19, sid, boxLow, boxHigh]` | the box's letters (a store's products) |
 | 37/31 `[37, 31, sid, boxLow, boxHigh, letterLow, letterHigh]` (37/25 the same) | the letter's text (an order form) |
 | 37/24 deliver a letter `bbwwwawwawaaa` (an order) | cmd 0 `00 00 <sid w> 25 18` (whichCmd 37, whichSub 24) |
+| 36/7 `bbw+ [36, 7, stampLow, stampHigh]` (INN: gameinfo.tim) | `24 07 00 00`: short form, "your gameinfo.cfg is current". A longer one (stamp words + file bytes) would be written to gameinfo.tim/.cfg; either releases the dial script (module 101 block 43 state 7) |
+| 2/0 `wwwwa` INVITE (msgType 12) to a bot | the bot answers `wwww [2, retAddress, bot, 13 ACCEPT]` to the inviter's invite room (data word 2 of the INVITE) |
 | anything else | nothing; it is logged |
 
-**Land instances.** The host lists several instances per land type
-(SierraLand: Dogfight Downs, Wacky Way, Looney Lane, Aerodrome; LarryLand:
-Leftys Lounge, Lizard Lane, Casino Strip, Hot Tub Haven), landNumber 1-4.
+**Land instances.** The host lists the INN lands it runs, four instances each,
+named as in the shipped `installed/INN/LANDADDR` (Clubhouse: INN Help Room,
+Tech Tower, Hearts, Singles Club; SierraLand: Dogfight Downs, Wacky Way,
+Looney Lane, Aerodrome; CasinoLand: High Rollers, Polite Place, Atlantic City,
+Key West), landNumber 1-4.
 Module 55 reads names with `%20s`, so spaces travel as underscores and the
 chooser shows spaces. The chooser gauge (PlaceButton.draw, view 55) shows
 `0`, a bar of curSize * 24 / maximum pixels and the maximum; curSize 255 is
@@ -259,8 +263,14 @@ retried, so delivery order between different senders does not matter.
 
 **Bots** (`--bots N` / `BOTS=N`, src/net/bots.js): host-side players with
 names and a plain face. They join every waiting room when it opens and answer
-talk with a canned line. They do not accept invitations (a seat needs a
-client that plays).
+talk with a canned line. They accept game invitations the way an invitee does
+in the INN invite rooms (installed/INN/913.SO, SierraLand modules 905-907):
+INVITE is msgType 12, its data is `whatGame, numInvitees, retAddress,
+invitee SIDs...`, and the answer `TSN_SEND "wwww" SN_SEND retAddress mySid
+ACCEPT(13)` goes to retAddress (DECLINE is 14, UNKNOWN_GAME 999). The inviter
+then opens the game and shows "Waiting to start...": the bot never joins the
+game group or moves, so the game does not start (a seat needs a client that
+plays).
 
 ## Findings against docs/protocol.md
 
@@ -284,8 +294,8 @@ block 38 (dialScript).
   (5-7, major.minor.revision), `maxVer` (8-10) and `landFlags` (11). A line is
   dropped when hostNumber is 255 or landType, landNumber or landFlags is 0.
   The chooser (module 55 blocks 12/14/15) lists the entries whose landType is
-  the clicked land's LAND.CFG number (1 CC, 2 SierraLand, 3 LarryLand,
-  4 MedievaLand) and whose version range contains the installed land's
+  the clicked land's LAND.CFG number (INN: 1 Clubhouse, 2 SierraLand,
+  3 CasinoLand) and whose version range contains the installed land's
   version; min = max = 0.0.0 accepts any version. `DEFAULT_LANDS` now sends
   one entry per land, hostNumber 1, landNumber 1, versions 0, flags 1.
 - **Entering a land** (module 101 block 112) is a program switch, not a

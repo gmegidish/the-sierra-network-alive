@@ -45,6 +45,8 @@ export class Memory {
     this.onInvalidAccess = null;
     /** @type {Map<number, MemoryEntry>} */
     this.entries = new Map();
+    /** @type {Map<number, Uint8Array>} contents of freed IDs, until reused */
+    this.stale = new Map();
     this.lowestFree = FIRST_ID;
   }
 
@@ -58,6 +60,7 @@ export class Memory {
       throw new Error('memory: out of IDs');
     }
     this.entries.set(id, { type: 0, bytes: new Uint8Array(0) });
+    this.stale.delete(id);
     this.lowestFree = id + ID_STEP;
     return id;
   }
@@ -84,6 +87,7 @@ export class Memory {
     if (!this.entries.has(id)) {
       return;
     }
+    this.stale.set(id, this.entries.get(id).bytes);
     this.entries.delete(id);
     if (id < this.lowestFree) {
       this.lowestFree = id;
@@ -130,17 +134,21 @@ export class Memory {
   }
 
   /**
-   * Words of a freed/unknown ID read as 0 and writes are dropped (reported via
-   * onInvalidAccess): scripts touch an object's properties after disposing it,
-   * which the DOS interpreter tolerates.
+   * Scripts touch memory after disposing it (e.g. WhoUAre::dispose reads its
+   * locals after super dispose unloaded its module), which the DOS interpreter
+   * tolerates because a freed hunk keeps its contents until reused. So a freed
+   * ID reads its stale contents, an unknown ID reads 0, and writes to either
+   * are dropped (both reported via onInvalidAccess).
    */
   readWord(id, offset) {
     const entry = this.entries.get(id);
+    const bytes = entry?.bytes ?? this.stale.get(id);
     if (!entry) {
       this.onInvalidAccess?.(id, 'read');
+    }
+    if (!bytes) {
       return 0;
     }
-    const { bytes } = entry;
     if (offset < 0 || offset + 1 >= bytes.length) {
       return 0;
     }

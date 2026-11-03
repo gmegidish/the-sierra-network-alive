@@ -34,3 +34,21 @@ test('talking to a bot gets its canned line back as a talk message from the bot'
   assert.equal(wordAt(reply, 4), bot.sid, 'from the bot');
   assert.equal(stringAt(reply, TALK_TEXT_OFFSET), DEFAULT_BOTS[0].reply);
 });
+
+const INVITE = 12;
+const ACCEPT = 13;
+const SIERRALAND_PAINTBALL = 2;
+
+test('a bot accepts an invitation by answering ACCEPT to the inviter\'s invite room', () => {
+  const world = new World();
+  const [bot] = addBots(world, 1);
+  const gil = recordingSession();
+  const gilSid = world.joinNet(gil, null);
+  const inviteRoom = world.joinNet(gil, null);
+  const invitation = encodeMessage('wwwwwwww', [2, bot.sid, gilSid, INVITE, SIERRALAND_PAINTBALL, 1, inviteRoom, bot.sid]);
+  world.relay(invitation, bot.sid, gilSid);
+  const [answer] = gil.inbox;
+  assert.equal(wordAt(answer, 2), inviteRoom, 'to the invite room (retAddress)');
+  assert.equal(wordAt(answer, 4), bot.sid, 'from the bot');
+  assert.equal(wordAt(answer, 6), ACCEPT);
+});

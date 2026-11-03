@@ -4,7 +4,7 @@
 
 import { encodeMessage } from './wire.js';
 import {
-  HOST, HOST_LANDS_SUB, HOST_INFO_HOST_NUMBER, LOGIN_WHICH_CMD, LOGIN_BAD_PASSWORD_SUB,
+  HOST, HOST_LANDS_SUB, HOST_INFO_HOST_NUMBER, HOST_INFO_GAME_INFO, LOGIN_WHICH_CMD, LOGIN_BAD_PASSWORD_SUB,
 } from './catalog.js';
 
 /**
@@ -87,6 +87,16 @@ export function done(whichCmd, whichSub) {
  */
 export function requestOk(toSid, whichCmd) {
   return encodeMessage('bbwbb', [HOST.OK, 0, toSid, whichCmd, 0]);
+}
+
+/**
+ * cmd 36 type 7, short form: the caller's gameinfo.cfg is current. INN module
+ * 101 (Dialing) writes a longer reply (stamp words + file bytes) to
+ * gameinfo.tim/.cfg; either length releases dialScript state 7.
+ * @returns {Uint8Array}
+ */
+export function gameInfoCurrent() {
+  return encodeMessage('bbw', [HOST.HOST_INFO, HOST_INFO_GAME_INFO, 0]);
 }
 
 /** cmd 36 type 5: hostNumber (g251), 0..200. @param {number} hostNumber @returns {Uint8Array} */

@@ -92,12 +92,14 @@ test('class modules 59950..60081 exist alongside regular modules', () => {
   assert.ok(modules.includes(0));
 });
 
-const LARRYLAND_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'installed', 'TSN', 'LL');
+const LARRYLAND_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'installed', 'INN', 'LL');
 const FIRST_LARRYLAND_FACE_VIEW = 6000;
 
+/** CasinoLand (INN LL): its map indexes its own RESOURCE.001 and the shared root RESOURCE.002. */
 function openLarryLand() {
   const read = (name) => readFileSync(join(LARRYLAND_DIR, name));
-  return createResourceManager({ map: read('RESOURCE.MAP'), volumes: { 1: read('RESOURCE.001') }, patches: [] });
+  const volumes = { 1: read('RESOURCE.001'), 2: read(join('..', 'RESOURCE.002')) };
+  return createResourceManager({ map: read('RESOURCE.MAP'), volumes, patches: [] });
 }
 
 test('view 6000 is found by its 16-bit id although the map decodes that id as module 1904', { skip: !existsSync(LARRYLAND_DIR) }, () => {

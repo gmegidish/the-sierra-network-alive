@@ -1,4 +1,4 @@
-// In-memory DOS filesystem backed by the installed TSN tree. Names are
+// In-memory DOS filesystem backed by the installed INN tree. Names are
 // case-insensitive and normalised to upper case with backslashes stripped of
 // "./" and ".\" prefixes; writes stay in memory. A land program runs with
 // its own current directory (TSN.PRG "cd LL"), so names resolve against
@@ -46,13 +46,24 @@ export class FileSystem {
     return foldDots(this.cwd ? `${this.cwd}\\${normalizePath(name)}` : normalizePath(name));
   }
 
+  /**
+   * Key of an existing file: in the current directory, else in the install root
+   * (LSCI.CFG "pathStr = ..\\": the Clubhouse runs in CC but reads GAME.CFG and
+   * GUIDE.CFG from the root). @param {string} name
+   */
+  locate(name) {
+    const here = this.resolve(name);
+    const inRoot = foldDots(normalizePath(name));
+    return this.files.has(here) || !this.files.has(inRoot) ? here : inRoot;
+  }
+
   exists(name) {
-    return this.files.has(this.resolve(name));
+    return this.files.has(this.locate(name));
   }
 
   /** @returns {Uint8Array | undefined} */
   read(name) {
-    return this.files.get(this.resolve(name));
+    return this.files.get(this.locate(name));
   }
 
   write(name, bytes) {

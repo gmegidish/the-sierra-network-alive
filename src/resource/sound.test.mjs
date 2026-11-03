@@ -4,14 +4,17 @@ import { RESOURCE_TYPE } from './types.js';
 import { parseSound, findTrack, mixTrack, decodeAdlibPatch, SOUND_DEVICE, END_OF_TRACK } from './sound.js';
 import { openWorld, soundNumbersOf, WORLDS } from '../audio/installed-worlds.mjs';
 
-const EXPECTED_SOUND_COUNTS = Object.freeze({ CC: 16, LL: 33, SL: 48 });
+const EXPECTED_SOUND_COUNTS = Object.freeze({ CC: 39, LL: 46, SL: 62 });
 const ADLIB_PATCH = 3;
 const INSTRUMENTS_IN_TWO_BANKS = 96;
-const MT32_ONLY_SOUND = 800;
+/** Sounds with no AdLib track (MT-32 only). */
+const MT32_ONLY_SOUNDS = Object.freeze([800, 960]);
+/** INN sound-type entries in some other format (no SCI device header). */
+const NOT_SCI_SOUNDS = Object.freeze([728, 729]);
 
 function eachSound(world, visit) {
   const resources = openWorld(world);
-  for (const number of soundNumbersOf(resources)) {
+  for (const number of soundNumbersOf(resources).filter((n) => !NOT_SCI_SOUNDS.includes(n))) {
     visit(number, parseSound(resources.get(RESOURCE_TYPE.SOUND, number)));
   }
 }
@@ -40,7 +43,7 @@ for (const world of WORLDS) {
     eachSound(world, (number, sound) => {
       const track = findTrack(sound, SOUND_DEVICE.ADLIB);
       if (!track) {
-        assert.equal(number, MT32_ONLY_SOUND, `only sound ${MT32_ONLY_SOUND} lacks an AdLib track`);
+        assert.ok(MT32_ONLY_SOUNDS.includes(number), `sound ${number} lacks an AdLib track`);
         return;
       }
       const { events, endTick } = mixTrack(track);

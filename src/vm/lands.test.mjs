@@ -1,28 +1,29 @@
 // Land switching: TSN.PRG programs, per-directory files, edit fields, the
 // raw Array copy the network messages rely on, and an end-to-end run that
-// picks LarryLand on the TSN map and lands on LarryLand's player screen.
+// picks CasinoLand on the Winter Map and lands on CasinoLand's player screen,
+// and SierraLand's and a Clubhouse room's waiting rooms.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { parseProgramFile, nextProgramVm } from './programs.js';
+import { parseProgramFile } from './programs.js';
 import { FileSystem } from './filesystem.js';
 import { applyKey } from './kernel/edit.js';
 import { Memory } from './memory.js';
 import { newArray, arraySet, arrayKernels } from './kernel/arrays.js';
-import { createVmFromDirectory } from './node-loader.mjs';
-import { EVENT_TYPE } from './events.js';
+import {
+  INSTALL_DIR, startSession, playUntil, addToScript, toTheWinterMapAs, toTheSierraLandWaitingRoomAs, toTheClubhouseWaitingRoomAs,
+  CASINOLAND_PLAYER_SCREEN_FRAME, SIERRALAND_WAITING_ROOM_FRAME, CLUBHOUSE_WAITING_ROOM_FRAME,
+} from './headless-session.mjs';
 
-const INSTALL_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'installed', 'TSN');
-const MS_PER_FRAME = 1000 / 60;
-const INSTRUCTIONS_PER_FRAME = 20000;
-const PLAY_BUTTON = Object.freeze({ x: 282, y: 66 });
-const LARRYLAND_ON_MAP = Object.freeze({ x: 80, y: 30 });
-const FIRST_LAND_IN_CHOOSER = Object.freeze({ x: 80, y: 90 });
-const LARRYLAND_PLAYER_PIC = 1010;
+const CASINOLAND_ON_MAP = Object.freeze([9300, [55, 40]]);
+const NO_ACCESS_PASSWORD = Object.freeze([9600, [219, 115]]);
+const CHOOSER_FRAME = 9800;
+const FIRST_CASINO_IN_CHOOSER = Object.freeze([9900, [80, 96]]);
+const CASINOLAND_PLAYER_PIC = 1010;
+const SIERRALAND_WAITING_ROOM_PIC = 120;
+const CLUBHOUSE_WAITING_ROOM_PIC = 100;
 /** "Please select where you would like to go:" in the land chooser. */
-const CHOOSER_PROMPT = Object.freeze({ top: 72, left: 40, bottom: 79, right: 230 });
+const CHOOSER_PROMPT = Object.freeze({ top: 76, left: 40, bottom: 85, right: 230 });
 const PEN_WHITE = 7;
 const BLACK = 0;
 const BYTE_ARRAY = 2;
@@ -77,26 +78,9 @@ test('Array copy moves raw bytes, so a byte message becomes little-endian words'
   assert.equal(arrayKernels.Array(vm, [ARRAY_AT, words, 0]), 0x104);
 });
 
-/** Append every picture `vm` draws to `pics`. */
-function recordPictures(vm, pics) {
-  const drawPic = vm.graphics.drawPic.bind(vm.graphics);
-  vm.graphics.drawPic = (number, clear) => {
-    pics.push(number);
-    drawPic(number, clear);
-  };
-}
-
-function runFrames(state, count) {
-  for (let i = 0; i < count; i++) {
-    if (state.vm.interp.halted) {
-      state.vm = nextProgramVm(state.vm) ?? state.vm;
-      recordPictures(state.vm, state.pics);
-      state.vm.boot();
-      state.programs.push(state.vm.program?.name);
-    }
-    state.vm.runSlice(INSTRUCTIONS_PER_FRAME);
-    state.clock.ms += MS_PER_FRAME;
-  }
+/** @returns {number[]} the client message types the fake host has seen */
+function packetTypesSent(vm) {
+  return [...vm.server.packetTypes.keys()].map((key) => Number(key.split('/')[0]));
 }
 
 /** Screen colours inside a rectangle. */
@@ -111,27 +95,47 @@ function colorsIn(vm, { top, left, bottom, right }) {
   return colors;
 }
 
-function clickAt(state, { x, y }) {
-  state.vm.events.push({ type: EVENT_TYPE.MOUSE_DOWN, message: 0, x, y });
-  state.vm.events.push({ type: EVENT_TYPE.MOUSE_UP, message: 0, x, y });
-}
+test('choosing CasinoLand on the map quits to TSNEXEC and boots CasinoLand from installed/INN/LL', { skip: !existsSync(INSTALL_DIR) }, () => {
+  const session = startSession({ script: [...toTheWinterMapAs('Gil'), CASINOLAND_ON_MAP, NO_ACCESS_PASSWORD] });
+  playUntil(session, CHOOSER_FRAME);
+  assert.ok(colorsIn(session.vm, CHOOSER_PROMPT).has(PEN_WHITE), 'the chooser prompt is drawn with the window pen (white)');
+  assert.ok(!colorsIn(session.vm, CHOOSER_PROMPT).has(BLACK), 'no black prompt text');
+  addToScript(session, [FIRST_CASINO_IN_CHOOSER]);
+  playUntil(session, CASINOLAND_PLAYER_SCREEN_FRAME);
 
-test('choosing LarryLand on the map quits to TSNEXEC and boots LarryLand from installed/TSN/LL', { skip: !existsSync(INSTALL_DIR) }, () => {
-  const clock = { ms: Date.UTC(1993, 0, 15, 20) }; // headless wall clock: a 1993 evening (DOS dates start in 1980)
-  const state = { clock, vm: createVmFromDirectory(INSTALL_DIR, { now: () => clock.ms }), programs: [], pics: [] };
-  state.vm.boot();
-  runFrames(state, 650);
-  clickAt(state, PLAY_BUTTON);
-  runFrames(state, 1800);
-  clickAt(state, LARRYLAND_ON_MAP);
-  runFrames(state, 150);
-  assert.ok(colorsIn(state.vm, CHOOSER_PROMPT).has(PEN_WHITE), 'the chooser prompt is drawn with the window pen (white)');
-  assert.ok(!colorsIn(state.vm, CHOOSER_PROMPT).has(BLACK), 'no black prompt text');
-  clickAt(state, FIRST_LAND_IN_CHOOSER);
-  runFrames(state, 900);
+  assert.deepEqual(session.programs, ['LLand']);
+  assert.equal(session.vm.fs.cwd, 'LL');
+  assert.equal(session.vm.interp.halted, false);
+  assert.equal(session.pics.at(-1), CASINOLAND_PLAYER_PIC);
+});
 
-  assert.deepEqual(state.programs, ['LLand']);
-  assert.equal(state.vm.fs.cwd, 'LL');
-  assert.equal(state.vm.interp.halted, false);
-  assert.equal(state.pics.at(-1), LARRYLAND_PLAYER_PIC);
+test('SierraLand boots from installed/INN/SL and a new persona reaches its waiting room', { skip: !existsSync(INSTALL_DIR) }, () => {
+  const session = startSession({ script: toTheSierraLandWaitingRoomAs('Gil') });
+  playUntil(session, SIERRALAND_WAITING_ROOM_FRAME);
+
+  assert.deepEqual(session.programs, ['SLand']);
+  assert.equal(session.vm.fs.cwd, 'SL');
+  assert.equal(session.pics.at(-1), SIERRALAND_WAITING_ROOM_PIC);
+});
+
+test('a Clubhouse room is entered without leaving the Clubhouse program', { skip: !existsSync(INSTALL_DIR) }, () => {
+  const session = startSession({ script: toTheClubhouseWaitingRoomAs('Gil') });
+  playUntil(session, CLUBHOUSE_WAITING_ROOM_FRAME);
+
+  assert.deepEqual(session.programs, []);
+  assert.equal(session.pics.at(-1), CLUBHOUSE_WAITING_ROOM_PIC);
+  assert.ok(packetTypesSent(session.vm).includes(10), 'the room was joined (10)');
+});
+
+test('a freed block keeps its contents for reads until its ID is reused, as a freed DOS hunk does', () => {
+  const memory = new Memory();
+  const locals = memory.alloc(6, 4);
+  memory.writeWord(locals, 2, 0x1234);
+  memory.free(locals);
+  assert.equal(memory.readWord(locals, 2), 0x1234, 'WhoUAre::dispose reads its locals after its module is gone');
+  memory.writeWord(locals, 2, 0x5678);
+  assert.equal(memory.readWord(locals, 2), 0x1234, 'writes to a freed block are dropped');
+  const reused = memory.alloc(6, 4);
+  assert.equal(reused, locals);
+  assert.equal(memory.readWord(reused, 2), 0, 'the new owner starts clean');
 });

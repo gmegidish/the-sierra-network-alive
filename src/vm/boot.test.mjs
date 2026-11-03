@@ -1,22 +1,15 @@
-// Integration: boot the installed CC world headless with virtual time, click
-// "Play" on the player screen and check that the fake host login leads to
-// the TSN map (pic 50). Skipped when installed/TSN is missing.
+// Integration: boot the installed INN Clubhouse headless with virtual time,
+// create a persona, click "Play" and check that the fake host login leads to
+// the Winter Map (pic 52). Skipped when installed/INN is missing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createVmFromDirectory } from './node-loader.mjs';
-import { EVENT_TYPE } from './events.js';
 import { drawCursor } from '../gfx/cursor.js';
+import {
+  INSTALL_DIR, startSession, playUntil, toTheWinterMapAs, SELECT_PLAYER_FRAME, WINTER_MAP_FRAME,
+} from './headless-session.mjs';
 
-const INSTALL_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'installed', 'TSN');
-const MS_PER_FRAME = 1000 / 60;
-const INSTRUCTIONS_PER_FRAME = 20000;
-const PLAY_BUTTON = Object.freeze({ x: 282, y: 66 });
-const PLAYER_SCREEN_FRAME = 650;
-const MAP_FRAME = 2400;
-const MAP_PIC = 50;
+const MAP_PIC = 52;
 const STATUS_BAR_ROWS = 10;
 const BLACK = 0;
 const ARROW_CURSOR_VIEW = 897;
@@ -28,28 +21,11 @@ const CARD = Object.freeze({
   YELLOW: 31, SKIN: 70, STRIP_COLOR: 28,
 });
 
-function bootHeadless() {
-  let clock = Date.UTC(1993, 0, 15, 20); // headless wall clock: a 1993 evening (DOS dates start in 1980)
-  const vm = createVmFromDirectory(INSTALL_DIR, { now: () => clock });
-  const drawnPics = [];
-  const drawPic = vm.graphics.drawPic.bind(vm.graphics);
-  vm.graphics.drawPic = (number, clear) => {
-    drawnPics.push(number);
-    drawPic(number, clear);
-  };
-  vm.boot();
-  const runFrames = (count) => {
-    for (let i = 0; i < count; i++) {
-      vm.runSlice(INSTRUCTIONS_PER_FRAME);
-      clock += MS_PER_FRAME;
-    }
-  };
-  return { vm, drawnPics, runFrames };
-}
-
-function clickAt(vm, { x, y }) {
-  vm.events.push({ type: EVENT_TYPE.MOUSE_DOWN, message: 0, x, y });
-  vm.events.push({ type: EVENT_TYPE.MOUSE_UP, message: 0, x, y });
+/** A new Clubhouse persona "Gil", run up to `frame`. */
+function gilUpTo(frame) {
+  const session = startSession({ script: toTheWinterMapAs('Gil') });
+  playUntil(session, frame);
+  return session;
 }
 
 /** Palette indices of one screen row. */
@@ -66,26 +42,18 @@ function packetTypesSent(vm) {
   return [...vm.server.packetTypes.keys()].map((key) => Number(key.split('/')[0]));
 }
 
-test('the CC world boots, logs in through the fake host and reaches the TSN map', { skip: !existsSync(INSTALL_DIR) }, () => {
-  const { vm, drawnPics, runFrames } = bootHeadless();
-  runFrames(PLAYER_SCREEN_FRAME);
+test('the Clubhouse boots, logs in through the fake host and reaches the Winter Map', { skip: !existsSync(INSTALL_DIR) }, () => {
+  const { vm, pics } = gilUpTo(WINTER_MAP_FRAME);
+
   assert.equal(vm.interp.halted, false);
   assert.ok(vm.trace.kernels.get('GetEvent')?.count > 0, 'the game loop polls for events');
-
-  clickAt(vm, PLAY_BUTTON);
-  runFrames(MAP_FRAME - PLAYER_SCREEN_FRAME);
-
-  assert.equal(vm.interp.halted, false);
   assert.ok(packetTypesSent(vm).includes(53), 'login (53) was sent');
   assert.ok(packetTypesSent(vm).includes(7), 'joinNet (7) was sent');
-  assert.equal(drawnPics.at(-1), MAP_PIC);
+  assert.equal(pics.at(-1), MAP_PIC);
 });
 
 test('the status bar is drawn through the screen port at rows 0-9, solid and full width', { skip: !existsSync(INSTALL_DIR) }, () => {
-  const { vm, runFrames } = bootHeadless();
-  runFrames(PLAYER_SCREEN_FRAME);
-  clickAt(vm, PLAY_BUTTON);
-  runFrames(MAP_FRAME - PLAYER_SCREEN_FRAME);
+  const { vm } = gilUpTo(WINTER_MAP_FRAME);
 
   const topRow = pixelsOfRow(vm, 0);
   const barRows = Array.from({ length: STATUS_BAR_ROWS }, (_, y) => pixelsOfRow(vm, y));
@@ -105,8 +73,7 @@ function fractionOf(pixels, color) {
 }
 
 test('the Select Player card shows the composed face and the "Gil" name strip', { skip: !existsSync(INSTALL_DIR) }, () => {
-  const { vm, runFrames } = bootHeadless();
-  runFrames(PLAYER_SCREEN_FRAME);
+  const { vm } = gilUpTo(SELECT_PLAYER_FRAME);
 
   const face = pixelsInside(vm, CARD.FACE);
   const strip = pixelsInside(vm, CARD.NAME_STRIP);
@@ -125,8 +92,7 @@ function frameWithCursorAt(vm, mouse) {
 }
 
 test('the game cursor is the view the scripts set, drawn as an overlay outside the framebuffer', { skip: !existsSync(INSTALL_DIR) }, () => {
-  const { vm, runFrames } = bootHeadless();
-  runFrames(PLAYER_SCREEN_FRAME);
+  const { vm } = gilUpTo(SELECT_PLAYER_FRAME);
   const framebufferBefore = Uint8Array.from(vm.screen.visual);
 
   const withCursor = frameWithCursorAt(vm, CURSOR_SPOT);

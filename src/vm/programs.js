@@ -5,6 +5,7 @@
 // same shared buffer (TSN 1/2), new resources and current directory.
 import { createResourceManager } from '../resource/index.js';
 import { Vm } from './vm.js';
+import { FileSystem } from './filesystem.js';
 
 /**
  * @typedef {Object} Program
@@ -45,39 +46,50 @@ export function findProgram(fs, name) {
   return parseProgramFile(text).get(name.toUpperCase()) ?? null;
 }
 
-/** NNN.SO / NNN.SCR patch files directly in `fs`'s current directory. */
+const MAP_FILE = 'RESOURCE.MAP';
+/** Each world's map indexes volume 1 (its own RESOURCE.001) and volume 2 (the shared root RESOURCE.002). */
+const LOCAL_VOLUME = 'RESOURCE.001';
+const SHARED_VOLUME = 'RESOURCE.002';
+/** TSNEXEC runs this program first (the Clubhouse, cd CC). */
+export const DEFAULT_PROGRAM = 'DEFAULT';
+
+/** Compiled NNN.SO / NNN.SCR patches directly in `fs`'s current directory (sources like 913.SO are skipped by the parser). */
 function patchesIn(fs) {
   return fs.list('*').filter((name) => !name.includes('\\') && PATCH_PATTERN.test(name))
     .map((name) => ({ name, bytes: fs.read(name) }));
 }
 
-/** @param {import('./filesystem.js').FileSystem} fs a view of one directory */
-function directoryResources(fs) {
-  return createResourceManager({ map: fs.read('RESOURCE.MAP'), volumes: { 1: fs.read('RESOURCE.001') }, patches: patchesIn(fs) });
-}
-
 /**
- * Resources of a program directory with the install root behind it, like
- * LSCI.CFG "pathStr = ..\": a resource missing from the land falls back to the root.
+ * Resources of a program directory, like LSCI.CFG "resource = .\;..\": the
+ * directory's map over its RESOURCE.001 and the root's RESOURCE.002, with
+ * patches from the directory first, then the root.
  * @param {import('./filesystem.js').FileSystem} fs @param {string} directory
  */
 export function createProgramResources(fs, directory) {
-  const root = directoryResources(fs.inDirectory(''));
-  if (!directory) {
-    return root;
-  }
-  const land = directoryResources(fs.inDirectory(directory));
-  const pick = (type, number) => (land.has(type, number) ? land : root);
-  const list = () => {
-    const seen = new Set(land.list().map((info) => `${info.type}.${info.number}`));
-    return [...land.list(), ...root.list().filter((info) => !seen.has(`${info.type}.${info.number}`))];
-  };
-  return Object.freeze({
-    list,
-    has: (type, number) => land.has(type, number) || root.has(type, number),
-    info: (type, number) => pick(type, number).info(type, number),
-    get: (type, number) => pick(type, number).get(type, number),
+  const root = fs.inDirectory('');
+  const world = fs.inDirectory(directory);
+  return createResourceManager({
+    map: world.read(MAP_FILE),
+    volumes: { 1: world.read(LOCAL_VOLUME), 2: root.read(SHARED_VOLUME) },
+    patches: [...patchesIn(root), ...patchesIn(world)],
   });
+}
+
+/**
+ * The first VM TSNEXEC starts: program DEFAULT of TSN.PRG.
+ * @param {Map<string, Uint8Array>} files install-relative paths -> bytes
+ * @param {Omit<import('./vm.js').VmOptions, 'resources' | 'files'>} [options]
+ * @returns {Vm}
+ */
+export function createInstallVm(files, options = {}) {
+  const root = new FileSystem(files);
+  const program = findProgram(root, DEFAULT_PROGRAM);
+  if (!program) {
+    throw new Error(`${PROGRAM_FILE} has no program ${DEFAULT_PROGRAM}`);
+  }
+  const vm = new Vm({ ...options, resources: createProgramResources(root, program.directory), fileSystem: root.inDirectory(program.directory) });
+  vm.program = program;
+  return vm;
 }
 
 /**

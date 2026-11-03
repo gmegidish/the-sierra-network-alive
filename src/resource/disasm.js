@@ -28,6 +28,8 @@ const FORMATS = (() => {
   set(0x22, [V, B]); // callb
   set(0x23, [V, B, B]); // calle module entry argBytes
   set(0x25, [B]); // send
+  set(0x26, [V]); // debug line (1995 interpreter)
+  set(0x27, [V]); // debug module (1995 interpreter)
   set(0x28, [V]); // class
   set(0x2a, [B]); // self
   set(0x2b, [V, B]); // super

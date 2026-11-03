@@ -38,8 +38,19 @@ function textSize(vm, [rect, text, font = 0, maxWidth = 0]) {
   vm.setProp(rect, 'top', 0);
   vm.setProp(rect, 'left', 0);
   vm.setProp(rect, 'bottom', box.height);
-  vm.setProp(rect, 'right', box.width);
+  vm.setProp(rect, 'right', boxWidth(box, signedValue(maxWidth)));
   return undefined;
+}
+
+/**
+ * Like SCI's text Size (ScummVM GfxText16::Size): an explicit wrap width is
+ * the box width, so Display 106 + center centres a label in that width (the
+ * status bar centres "ImagiNation v2.4" in 320); without one it is the
+ * longest line.
+ * @param {{ width: number }} measured @param {number} maxWidth
+ */
+function boxWidth(measured, maxWidth) {
+  return maxWidth > 0 ? maxWidth : measured.width;
 }
 
 /** @returns {{ state: DisplayState, result: number | undefined }} */
@@ -76,7 +87,7 @@ function display(vm, [text, ...commands]) {
   }
   const font = g.font(state.font);
   const size = measureBox(font, string, state.width || DEFAULT_TEXT_WIDTH);
-  const box = makeRect(state.y, state.x, state.y + size.height, state.x + (state.width || size.width));
+  const box = makeRect(state.y, state.x, state.y + size.height, state.x + boxWidth(size, state.width));
   let handle = 0;
   if (state.saveUnder) {
     handle = g.saveBits(makeRect(box.top + port.rect.top, box.left + port.rect.left, box.bottom + port.rect.top, box.right + port.rect.left));
@@ -125,6 +136,9 @@ function drawControl(vm, [control]) {
   }
   if (type === CONTROL_TYPE.BUTTON || type === CONTROL_TYPE.EDIT) {
     g.frameRect(rect, BLACK);
+  }
+  if (type === CONTROL_TYPE.ICON) {
+    return undefined; // an icon is only its cel; INN scripts Display the label themselves
   }
   drawControlText(vm, control, type === CONTROL_TYPE.EDIT ? makeRect(rect.top + 1, rect.left + 1, rect.bottom, rect.right) : rect,
     signedValue(vm.prop(control, 'mode')));

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createVmFromDirectory } from '../node-loader.mjs';
 import { arrayKernels } from './arrays.js';
 
-const INSTALL_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'installed', 'TSN');
+const INSTALL_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'installed', 'INN');
 const ARRAY_COMPARE = 7;
 const NOT_FOUND = 255;
 

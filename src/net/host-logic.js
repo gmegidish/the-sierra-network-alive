@@ -6,7 +6,7 @@ import {
   CLIENT, CLIENT_SUB, describeClientMessage, decodeLogin, decodeJoinNet, formatDescribed, hex,
 } from './catalog.js';
 import {
-  loginOk, loginRejected, sidAssign, done, requestOk, bankBalance, hostNumber, landList, landInfo, memberProperties, objectProperties,
+  loginOk, loginRejected, sidAssign, done, gameInfoCurrent, requestOk, bankBalance, hostNumber, landList, landInfo, memberProperties, objectProperties,
 } from './host-messages.js';
 import { wordAt, stringAt } from './host-objects.js';
 import { World, createSidAllocator } from './world.js';
@@ -40,7 +40,8 @@ export const STAGE = Object.freeze({
 
 export { createSidAllocator };
 
-export const DEFAULT_PASSWORD = '123456';
+/** The password in the shipped installed/INN/PASS_SET.DTA. */
+export const DEFAULT_PASSWORD = 'XXXXXX';
 export const LOGIN_TRIES = 3;
 export const BAD_PASSWORD_TEXT = 'Invalid password.';
 /** Privilege mask 0: an ordinary member (g82 = 0). */
@@ -77,15 +78,15 @@ function instances(landType, names) {
 }
 
 /**
- * Lands from installed/TSN/LAND.CFG (types 1-4), all on this host, a few
- * instances each. Module 55 reads names with "%20s", so spaces are sent as
- * underscores (at most 20 characters).
+ * The INN lands this port runs (installed/INN/LAND.CFG types 1 Clubhouse,
+ * 2 SierraLand, 3 CasinoLand), all on this host, named after the instances in
+ * the shipped installed/INN/LANDADDR. Module 101 writes them to LandAddr with
+ * "%20s", so spaces are sent as underscores (at most 20 characters).
  */
 export const DEFAULT_LANDS = Object.freeze([
-  land('TSN_Clubhouse', 1),
+  ...instances(1, ['INN_Help_Room', 'Tech_Tower', 'Hearts', 'Singles_Club']),
   ...instances(2, ['Dogfight_Downs', 'Wacky_Way', 'Looney_Lane', 'Aerodrome']),
-  ...instances(3, ['Leftys_Lounge', 'Lizard_Lane', 'Casino_Strip', 'Hot_Tub_Haven']),
-  land('MedievaLand', 4),
+  ...instances(3, ['High_Rollers', 'Polite_Place', 'Atlantic_City', 'Key_West']),
 ]);
 
 
@@ -140,6 +141,7 @@ export class HostLogic {
       [handlerKey(CLIENT.JOIN_NET), (m) => this.onJoinNet(m)],
       [handlerKey(CLIENT.HOST_INFO, CLIENT_SUB.HOST_NUMBER_REQUEST), () => this.reply(hostNumber(this.config.hostNumber))],
       [handlerKey(CLIENT.HOST_INFO, CLIENT_SUB.LAND_ADDR), () => this.onLandAddr()],
+      [handlerKey(CLIENT.HOST_INFO, CLIENT_SUB.GAME_INFO), () => this.reply(gameInfoCurrent())],
       [handlerKey(CLIENT.LANDS, CLIENT_SUB.LAND_REQUEST), () => this.onLandRequest()],
       [handlerKey(CLIENT.PERSONA, BANK_REQUEST_SUB), (m) => this.onBankRequest(m)],
       [handlerKey(CLIENT.SESSION_37, MALL_SUB.STORES), (m) => this.onStoreList(m)],

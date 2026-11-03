@@ -16,7 +16,8 @@ const ARRAY_TYPES = Object.freeze([
   { memoryType: MEMORY_TYPE.STRING, elementSize: 1 },
 ]);
 const ARRAY_OP = Object.freeze({ NEW: 0, FREE: 1, AT: 2, AT_PUT: 3, SIZE: 4, FILL: 5, COPY: 6, COMPARE: 7 });
-const STRING_OP = Object.freeze({ LENGTH: 0, FORMAT_NEW: 1, FORMAT: 2, TRIM: 3, TO_NUMBER: 4 });
+/** 0-4 as in 1993; the 1995 interpreter's jump table goes to 11 (Str getToken, module 60001). */
+const STRING_OP = Object.freeze({ LENGTH: 0, FORMAT_NEW: 1, FORMAT: 2, TRIM: 3, TO_NUMBER: 4, GET_TOKEN: 11 });
 const BLOCK_OP = Object.freeze({ DUPLICATE: 0, FREE: 1, TYPE: 2 });
 const WHOLE_STRING = 0xffff;
 
@@ -134,6 +135,25 @@ function array(vm, args) {
   }
 }
 
+/**
+ * String(11, source, token, delimiters), what the 1993 Str getToken did in
+ * script: drop leading delimiters from `source`, move the characters up to the
+ * next delimiter into `token`; 0 when nothing is left.
+ */
+function getToken(vm, source, token, delimiters) {
+  const text = vm.strings.read(source);
+  const start = [...text].findIndex((ch) => !delimiters.includes(ch));
+  if (start < 0) {
+    vm.strings.write(source, '');
+    return 0;
+  }
+  const end = [...text].findIndex((ch, i) => i >= start && delimiters.includes(ch));
+  const stop = end < 0 ? text.length : end;
+  vm.strings.write(token, text.slice(start, stop));
+  vm.strings.write(source, text.slice(stop));
+  return 1;
+}
+
 function string(vm, args) {
   const [op, id = 0] = args;
   const read = (value) => vm.strings.read(value);
@@ -150,6 +170,7 @@ function string(vm, args) {
       return undefined;
     }
     case STRING_OP.TO_NUMBER: return Number.parseInt(read(id), 10) & 0xffff || 0;
+    case STRING_OP.GET_TOKEN: return getToken(vm, id, args[2], read(args[3]));
     default:
       vm.trace.log('error', `String: unknown op ${op}`);
       return 0;

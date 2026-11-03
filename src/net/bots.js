@@ -1,7 +1,10 @@
 // Bots: host-side players with no client behind them, so one person can see
 // somebody in the waiting rooms. A bot joins every waiting room (shared group)
-// as it opens, shows a persona in the room list, and answers talk with a
-// canned line. It does not play games (a BlackJack seat needs a client).
+// as it opens, shows a persona in the room list, answers talk with a canned
+// line and accepts game invitations (the INN invite rooms, e.g. SierraLand
+// modules 905-907 and the Football invite source installed/INN/913.SO). It
+// does not play: an accepted game waits for moves that never come, and a
+// BlackJack seat needs a client.
 
 import { encodeMessage } from './wire.js';
 import { wordAt } from './host-objects.js';
@@ -15,6 +18,11 @@ import { wordAt } from './host-objects.js';
 
 const USER_MESSAGE = 2;
 const TALK = 1;
+/** Invite room msgTypes (913.SO INVITE / ACCEPT; DECLINE is 14, UNKNOWN_GAME 999). */
+const INVITE = 12;
+const ACCEPT = 13;
+/** INVITE data after msgType: whatGame w, numInvitees w, retAddress w (the inviter's invite room), invitee SIDs. */
+const INVITE_RET_ADDRESS_OFFSET = 12;
 /** Talk data after msgType: b 14, b 2, b 1, then the zero-terminated text (as the LL client sends it). */
 const TALK_HEAD = [14, 2, 1];
 const MSG = Object.freeze({ TO: 2, FROM: 4, TYPE: 6 });
@@ -49,13 +57,24 @@ export class Bot {
     objects.setProperty(this.sid, PROPERTY.AGE, BOT_AGE);
   }
 
-  /** A message the world routes to the bot: talk gets the canned reply. @param {Uint8Array} message */
+  /** A message the world routes to the bot: talk gets the canned reply, an invitation a yes. @param {Uint8Array} message */
   deliver(message) {
-    const isTalkToMe = message[0] === USER_MESSAGE && wordAt(message, MSG.TYPE) === TALK && wordAt(message, MSG.TO) === this.sid;
-    if (!isTalkToMe) {
-      return;
+    const isToMe = message[0] === USER_MESSAGE && wordAt(message, MSG.TO) === this.sid;
+    if (isToMe && wordAt(message, MSG.TYPE) === TALK) {
+      this.reply(wordAt(message, MSG.FROM));
     }
-    const to = wordAt(message, MSG.FROM);
+    if (isToMe && wordAt(message, MSG.TYPE) === INVITE) {
+      this.acceptInvitation(wordAt(message, INVITE_RET_ADDRESS_OFFSET));
+    }
+  }
+
+  /** 913.SO's invitee: TSN_SEND "wwww" SN_SEND retAddress mySid ACCEPT. @param {number} retAddress */
+  acceptInvitation(retAddress) {
+    this.world.relay(encodeMessage('wwww', [USER_MESSAGE, retAddress, this.sid, ACCEPT]), retAddress, this.sid);
+  }
+
+  /** @param {number} to */
+  reply(to) {
     const data = [...TALK_HEAD, ...[...this.persona.reply].map((ch) => ch.charCodeAt(0)), 0];
     this.world.relay(encodeMessage('bbwwwa', [USER_MESSAGE, 0, to, this.sid, TALK, data.length, Uint8Array.from(data)]), to, this.sid);
   }
