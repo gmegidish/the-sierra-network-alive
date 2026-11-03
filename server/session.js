@@ -21,6 +21,8 @@ export {
  * @property {number} [hostNumber]  answer to 36/5, 0..200
  * @property {() => number} [allocateSid]
  * @property {import('../src/net/host-messages.js').LandRecord[]} [lands]
+ * @property {import('../src/net/world.js').World} [world]  shared by every caller of the server
+ * @property {Map<string, number>} [bank]
  */
 
 export class HostSession {
@@ -62,6 +64,11 @@ export class HostSession {
   /** Drive retransmission; call every few hundred ms. */
   tick() {
     this.link.tick();
+  }
+
+  /** The caller hung up: drop it from the shared world. */
+  hangUp() {
+    this.host.hangUp();
   }
 
   /** Caller sent a line BREAK: PAD command mode, link seqs reset. */

@@ -181,6 +181,23 @@ export function groupMembers(toSid, members) {
 const PROPERTY_TYPE = Object.freeze({ WORD: 0, STRING: 1 });
 export const HOST_MEMBER_PROPERTIES = 31;
 
+export const HOST_OBJECT_PROPERTIES = 33;
+
+/**
+ * cmd 33 (class 116): properties of object `sid`, the answer to client 32.
+ * Header type, 0, toSID w2, fromSID w4; then per property type b (0 word,
+ * 1 string), offset w, value (word, or NUL-terminated string).
+ * @param {number} sid @param {PropertyValue[]} values @param {(offset: number) => boolean} isStringProperty
+ * @returns {Uint8Array}
+ */
+export function objectProperties(sid, values, isStringProperty) {
+  const head = encodeMessage('bbww', [HOST_OBJECT_PROPERTIES, 0, sid, sid]);
+  const records = values.map(({ offset, value }) => (isStringProperty(offset)
+    ? encodeMessage('bws', [PROPERTY_TYPE.STRING, offset, String(value)])
+    : encodeMessage('bww', [PROPERTY_TYPE.WORD, offset, Number(value)])));
+  return Uint8Array.from([...head, ...records.flatMap((record) => Array.from(record))]);
+}
+
 /**
  * cmd 31 (class 124): requested properties of the members of group `toSid`.
  * Layout: toSID w2, group w4, member count w6, property count w8, then

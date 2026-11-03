@@ -6,6 +6,7 @@ A local stand-in for the 1992 Sierra Network host, so the web client can
 ```
 npm install
 npm run server          # http://127.0.0.1:7000/  line: ws://localhost:7000/line
+npm run server -- --bots 2   # or BOTS=2: bots sit in every waiting room
 npm run fake-client     # in a second terminal: dial, log in, reach "online"
 npm run test:server
 ```
@@ -28,6 +29,8 @@ only and refuses WebSocket upgrades whose `Origin` is not localhost/127.0.0.1.
 | `src/net/host-messages.js` | shared | host reply builders (login, SID, land list, groups, member properties) |
 | `src/net/host-logic.js` | shared | `HostLogic`: one decoded client message in, replies out; used by `HostSession` and, in-process, by `FakeServer` |
 | `src/net/host-objects.js` | shared | host state of networked objects: properties (13/14) and group membership (10/11) |
+| `src/net/world.js` | shared | `World`: the SIDs, groups and properties every session of one server shares, and routing between sessions |
+| `src/net/bots.js` | shared | host-side bot players (waiting rooms, canned talk replies) |
 | `server/session.js` | server | `HostSession`: PAD, then LinkEndpoint, then `HostLogic` |
 | `tools/fake-client.mjs` | Node | the client stack end to end, without the VM |
 
@@ -102,19 +105,21 @@ const link = new LinkEndpoint({
 |---|---|
 | 53 login, right password | `00 00 00 00 16 <priv w> 00 01 00` (cmd 0, whichCmd 22) |
 | 53 login, wrong password | `01 00 00 00 16 09 00 03 "Invalid password." 00` (cmd 1, sub 9, numTries 3) |
-| 7 joinNet | `08 00 <objID w> 00 00 <sid w>`; SIDs start at 101. The session keeps the SID of its first joinNet; later ones register groups (waiting room, a new game) |
+| 7 joinNet | `08 00 <objID w> 00 00 <sid w>`; SIDs start at 101 and are unique per server. The session keeps the SID of its first joinNet; later ones register groups (waiting room, a new game). Flags bit 4 (shared, the waiting room `[7, 0, obj, 5, landType, 1, 128]`): one SID per (object, landType, maximum) for everybody |
 | 36/5 | `24 05 <hostNumber w>` (hostNumber 1) |
 | 36/6 | 47/2 land list (the four lands of `LAND.CFG`), then `01 00 00 00 24 06` |
 | 47/1 | land info `2F 01 00 00 00 00 00 00 00 00 <count w>` then 5 bytes per land (hostNumber, landType, landNumber, maximum, curSize; root module 0 ProcessLandInfo, which marks unlisted lands N/A), then `01 00 00 00 2F 01`; the session is now `online` |
 | 9 leaveNet `[9, sid, 0]` | nothing (sent before a land switch) |
-| 13 word properties `[13, toSID, fromSID, (offset, value)...]` | nothing; stored per SID |
-| 14 string property `[14, toSID, fromSID, offset, text\0]` | nothing; stored per SID |
-| 10 join group `[10, group, who, 1, 1, 17]` | cmd 10 `0A 00 <group w> <who w>`, then cmd 12 `0C 00 <group w> 00 00 <member w>...` |
-| 11 leave group | cmd 11 `0B 00 <group w> <who w>` |
+| 13 word properties `[13, toSID, fromSID, (offset, value)...]` | nothing; stored per SID. fromSID 0xFFFF (public, e.g. offset 9 = the room module: 120 waiting room, 911 BlackJack) is also sent unchanged to every other session |
+| 14 string property `[14, toSID, fromSID, offset, text\0]` | the same |
+| 32 get one object `[32, sid, sid, offset...]` | cmd 33 (class 116) `21 00 <sid w> <sid w>`, then per property `type b (0 word, 1 string), offset w, value` |
+| 10 join group `[10, group, who, 1, 1, 17]` | to every member (the joiner too): cmd 10 `0A 00 <group w> <who w>`, then cmd 12 `0C 00 <group w> 00 00 <member w>...` |
+| 11 leave group | to every member: cmd 11 `0B 00 <group w> <who w>`, then cmd 12 to the rest. Hang-up and 9 leaveNet do the same for every group of every SID the session owned |
+| 2 / 3 user message `[2, notify, toSID w, fromSID w, msgType w, data]` | relayed unchanged to toSID's session, or to every other member when toSID is a group |
 | 31/1 get members `[31/1, group, group, offset...]` | cmd 31, see below |
 | 4 lock game group `wwa [4, group, member...]` (bytes `04 00 <group w> <member w>...`, no count) | cmd 0 ok `00 00 <group w> 04 00` (whichCmd 4 @4); the members join the group |
 | 40/3 bank request `bbwww [40, 3, sid, 1, 1]` | cmd 40 to SID 0 `28 03 00 00 01 00 01 00 <low w> <high w>`: whichCmd 3 @1, msgType 1 @4, whichSub 1 @6, the LarryBucks as a long @8 |
-| 28 "said" fan-out `[28, sub, me, count, count, members[], rest...]` | nothing; it goes to the listed members (none when alone) |
+| 28 "said" fan-out `bwwaw+ [28, me, count, count, members[], msgType, data...]` | each listed member except 0 and `me` gets cmd 2 `02 00 <member w> <me w> <msgType w> data` |
 | 30/7 `[30, group]`, 2/0 user message `[2, group, me, 103, x]` (slot handle pulled) | nothing |
 | 37/32 `bbw+ [37, 32, sid, 0, 0]` from the Mall (sid != 0) | store list, see "The Electronic Mall"; the startup 37/32 (sid 0) gets nothing |
 | 37/19 `[37, 19, sid, boxLow, boxHigh]` | the box's letters (a store's products) |
@@ -201,6 +206,61 @@ Every inbound message is logged, decoded (`<- 53 login {...}`). An unknown
 type is logged as hex. Bad CRCs are NAKed. Frames over 255 bytes are dropped.
 A PAD command line is capped at 80 characters. Exceptions in a session are
 logged, never thrown.
+
+## Multiplayer
+
+One `World` per server (`server/index.js`; each `FakeServer` makes its own
+unless one is passed in) owns SIDs, groups, properties and which session owns
+which SID. A session is anything with `deliver(message)`; HostLogic's
+`deliver` queues a host message to its caller. Routing rules:
+
+- joinNet: the SID belongs to the session; client 10 also claims `who` for
+  the session. Shared (flags 4) objects have no owner.
+- 2/3: toSID a group with members -> every member's session except fromSID's;
+  else toSID's owner.
+- 28: one cmd 2 per listed member (see the table).
+- 13/14 with fromSID 0xFFFF -> every other session.
+- 10/11/leaveNet/hang-up -> cmd 10/11 and 12 to the group's members.
+
+**Presence.** The waiting room (LL module 120) joins its shared group; every
+member hears cmd 10 + 12, and each client asks for an unknown member's
+persona with client 32 (offsets 5 name, 18 face, 24 occupation, 9 room, ...),
+answered with cmd 33 from the shared properties. 31/1 returns the stored
+values of every member.
+
+**Talk.** Select players, Talk: client 2 `[2, 0, to, from, 1, 14, 2, 1,
+text\0]` per recipient; the receiver shows "Gil states, "...""  with
+Complain/Mute/Reply/OK.
+
+**Joining a game** (LL module 1020, play1Script). The table owner's client
+sets public property 9 = 911 (BlackJack) with 13/0xFFFF, so a waiting room
+shows the player as "in BlackJack" and offers Join. Join sends a msgType-55
+user message to the owner; the owner's client asks "... wants to join, Yes/No"
+and answers with msgType 13 (accept, carrying the table group) or 14/31/32/39
+(refusals); on accept the joiner newRooms to the game and joins the table
+group (`[7, 0, obj, 2, 3, -2, 64]`, flags 2) with client 10.
+
+**BlackJack moves** (module 911, all 28 fan-outs or 2 to one player, msgType
+then words; the meanings are read from the traffic and module 911's
+handlers, not from documentation). The table owner deals; the round id is a
+random word.
+
+| msgType | from | data | meaning |
+|---|---|---|---|
+| 105 | dealer | `dealer, player, 0, 0, round` | a new betting round |
+| 100 | each | `round, 0` / `round, 1, bet, 0` | bet state; bet 0 = sitting out |
+| 24 | dealer, cmd 2 to each player | 52 bytes | the shuffled deck, one byte per card (rank in the high nibble 1-13, suit low 1-4) |
+| 42 | dealer | `round, seat, card` | next card / turn (applied only in state 5) |
+| 106 | player | `0` | done with the round |
+| 109 | owner -> joiner, cmd 2 | `2, owner, joiner, 0, 0, owner` | the table after the join |
+
+Messages that arrive before the game expects them are put back (putMsg) and
+retried, so delivery order between different senders does not matter.
+
+**Bots** (`--bots N` / `BOTS=N`, src/net/bots.js): host-side players with
+names and a plain face. They join every waiting room when it opens and answer
+talk with a canned line. They do not accept invitations (a seat needs a
+client that plays).
 
 ## Findings against docs/protocol.md
 

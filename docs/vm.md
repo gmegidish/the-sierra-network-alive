@@ -58,6 +58,7 @@ following to `out/run/`:
 - `src/vm/real-host.test.mjs`: the same login against `server/session.js` over LinkEndpoint and the X.28 PAD, joined by an in-memory line; asserts room 50 and a single 36/6.
 - `src/vm/lands.test.mjs`: TSN.PRG, directory views, edit keys, raw Array copy, and map -> LarryLand chooser -> LarryLand player screen.
 - `src/net/fake-server.test.mjs`: shared host logic (SIDs, land list, groups, member properties).
+- `src/vm/multiplayer.test.mjs`: two headless clients on one `World` (each with its own `FakeServer({ world })`): both reach the LarryLand waiting room, Gil's client learns Kris's name, Gil talks and Kris's client gets the line; then Kris opens a BlackJack table, Gil joins, and both screens show the same deal and result (~30 s).
 
 ## Architecture
 
@@ -251,11 +252,10 @@ sends to freed objects when rooms are disposed. They are harmless.
 3. **TSN Clubhouse.** Program `Sierr` runs the root again, but the map says
    "TSN Clubhouse has not been installed"; find what module 50 checks
    (LAND.CFG directory `.`).
-4. **Other players.** HostLogic keeps per-SID properties and group members
-   for one caller. Fan-out between sessions (cmd 10/12/13/14 to other
-   members) and talk (cmd 2 user messages) are next. Talk/Look need someone
-   selected, so alone in the waiting room they only say so. Games (Play) need their
-   own messages (25/27/29 and others).
+4. **Other players.** Presence, talk, joining a game and BlackJack between
+   two clients work (docs/server.md "Multiplayer"). Not yet: paging and "has
+   just logged in" (module 59953), the waiting-room head count, Poker/Roulette
+   and SierraLand games over the net, bots that play.
 5. **Graph sub-ops** 0, 2, 5, 8, 9 and 13, plus Kernel90-92. Display mode 1 centres button labels inside their width, but in DOSBox the Select Player button labels sit at their x; unexplained (0x50a:0x55a reads as centring).
 6. **Sound** is being added separately (src/audio/, kernel/sound.js).
 7. **Persistence.** Save in-memory filesystem writes (PLAYER.DIR, *.DTA,

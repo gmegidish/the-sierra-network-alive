@@ -4,10 +4,13 @@
 // line break. Bound to 127.0.0.1 only. Run: npm run server
 
 import http from 'node:http';
+import { parseArgs } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { HostSession } from './session.js';
+import { World } from '../src/net/world.js';
+import { addBots } from '../src/net/bots.js';
 import { BREAK_SIGNAL } from '../src/net/ws-transport.js';
 
 /**
@@ -15,6 +18,7 @@ import { BREAK_SIGNAL } from '../src/net/ws-transport.js';
  * @property {number} [port]  0 picks an ephemeral port
  * @property {(text: string) => void} [log]
  * @property {string} [password]
+ * @property {number} [bots]  host-side players sitting in the waiting rooms
  */
 
 /**
@@ -43,13 +47,14 @@ function isLocalOrigin({ origin }) {
  * @param {number} callId
  * @param {ServerOptions} options
  */
-function answerCall(socket, callId, { log = console.log, password, bank }) {
+function answerCall(socket, callId, { log = console.log, password, bank, world }) {
   const say = (text) => log(`[line ${callId}] ${text}`);
   const session = new HostSession({
     send: (bytes) => socket.send(bytes),
     now: () => Date.now(),
     log: say,
     bank,
+    world,
     ...(password ? { password } : {}),
   });
   const timer = setInterval(() => session.tick(), TICK_INTERVAL_MS);
@@ -63,6 +68,7 @@ function answerCall(socket, callId, { log = console.log, password, bank }) {
   });
   socket.on('close', () => {
     clearInterval(timer);
+    session.hangUp();
     say(`hang up (stage ${session.stage})`);
   });
   socket.on('error', (error) => say(`socket error: ${error.message}`));
@@ -97,9 +103,11 @@ export function startServer(options = {}) {
   let calls = 0;
   // ponytail: LarryBucks live in memory for the server's lifetime; a file or DB when restarts must keep them.
   const bank = new Map();
+  const world = new World();
+  addBots(world, options.bots ?? 0);
   wss.on('connection', (socket) => {
     calls += 1;
-    answerCall(socket, calls, { ...options, log, bank });
+    answerCall(socket, calls, { ...options, log, bank, world });
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -128,6 +136,7 @@ function isRunAsScript() {
 
 if (isRunAsScript()) {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
-  const { port: actualPort } = await startServer({ port, password: process.env.TSN_PASSWORD });
+  const bots = Number(parseArgs({ options: { bots: { type: 'string' } } }).values.bots ?? process.env.BOTS ?? 0);
+  const { port: actualPort } = await startServer({ port, password: process.env.TSN_PASSWORD, bots });
   console.log(`TSN host listening on http://${BIND_ADDRESS}:${actualPort}/ (line: ws://localhost:${actualPort}${LINE_PATH})`);
 }

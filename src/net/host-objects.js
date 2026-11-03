@@ -61,6 +61,12 @@ export class HostObjects {
     this.groups.set(group, this.members(group).filter((sid) => sid !== who));
   }
 
+  /** Drop everything known about `sid` (it left the net). @param {number} sid */
+  forget(sid) {
+    this.properties.delete(sid);
+    this.groups.delete(sid);
+  }
+
   /** @param {number} group @returns {number[]} */
   members(group) {
     return this.groups.get(group) ?? [];

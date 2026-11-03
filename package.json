@@ -9,7 +9,7 @@
     "test:resource": "node --test src/resource/*.test.mjs",
     "server": "node server/index.js",
     "fake-client": "node tools/fake-client.mjs",
-    "test:server": "node --test server/*.test.mjs src/net/link.test.mjs src/net/modem.test.mjs src/net/wire.test.mjs src/net/mall.test.mjs",
+    "test:server": "node --test server/*.test.mjs src/net/link.test.mjs src/net/modem.test.mjs src/net/wire.test.mjs src/net/mall.test.mjs src/net/world.test.mjs src/net/bots.test.mjs",
     "test:vm": "node --test src/vm/*.test.mjs src/vm/kernel/*.test.mjs src/net/fake-server.test.mjs",
     "test:audio": "node --test src/audio/*.test.mjs",
     "render-sound": "node tools/render-sound.mjs",

@@ -6,9 +6,10 @@ import {
   CLIENT, CLIENT_SUB, describeClientMessage, decodeLogin, decodeJoinNet, formatDescribed, hex,
 } from './catalog.js';
 import {
-  loginOk, loginRejected, sidAssign, done, requestOk, bankBalance, hostNumber, landList, landInfo, groupChange, groupMembers, memberProperties, HOST_GROUP,
+  loginOk, loginRejected, sidAssign, done, requestOk, bankBalance, hostNumber, landList, landInfo, memberProperties, objectProperties,
 } from './host-messages.js';
-import { HostObjects, wordAt, stringAt } from './host-objects.js';
+import { wordAt, stringAt } from './host-objects.js';
+import { World, createSidAllocator } from './world.js';
 import { DEFAULT_STORES, MALL_SUB, storeList, letterList, letterText, letterDelivered } from './mall.js';
 
 /**
@@ -19,7 +20,8 @@ import { DEFAULT_STORES, MALL_SUB, storeList, letterList, letterText, letterDeli
  * @property {number} [privilege]  login reply word@5
  * @property {number} [landAccess]  login reply word@8 (g253): land n needs bit n-1
  * @property {number} [hostNumber]  answer to 36/5, 0..200
- * @property {() => number} [allocateSid]
+ * @property {() => number} [allocateSid]  used when no world is given
+ * @property {World} [world]  the server's shared world (one per server; a new one when alone)
  * @property {import('./host-messages.js').LandRecord[]} [lands]
  * @property {Map<string, number>} [bank]  player name -> LarryBucks, shared by a server's sessions
  * @property {readonly import('./mall.js').MallStore[]} [stores]  the Electronic Mall
@@ -36,6 +38,8 @@ export const STAGE = Object.freeze({
   DEAD: 'dead',
 });
 
+export { createSidAllocator };
+
 export const DEFAULT_PASSWORD = '123456';
 export const LOGIN_TRIES = 3;
 export const BAD_PASSWORD_TEXT = 'Invalid password.';
@@ -43,7 +47,6 @@ export const BAD_PASSWORD_TEXT = 'Invalid password.';
 export const DEFAULT_PRIVILEGE = 0;
 export const DEFAULT_HOST_NUMBER = 1;
 export const ALL_LANDS_ACCESS = 0xffff;
-const FIRST_SID = 100;
 /** LarryBucks a new player starts with. */
 export const STARTING_BUCKS = 500;
 
@@ -85,14 +88,6 @@ export const DEFAULT_LANDS = Object.freeze([
   land('MedievaLand', 4),
 ]);
 
-/** @param {number} [first] @returns {() => number} */
-export function createSidAllocator(first = FIRST_SID) {
-  let next = first;
-  return () => {
-    next += 1;
-    return next;
-  };
-}
 
 /**
  * Client object messages, all "type w, toSID w2, fromSID w4, ...":
@@ -100,8 +95,12 @@ export function createSidAllocator(first = FIRST_SID) {
  * from 6, 14 string property (offset w6, text from 8), 31/1 get members'
  * properties (offsets from 6).
  */
-const CLIENT_OBJECT = Object.freeze({ LOCK: 4, JOIN: 10, LEAVE: 11, WORDS: 13, STRING: 14, GET_MEMBERS: 31 });
+const CLIENT_OBJECT = Object.freeze({ SEND: 2, RSEND: 3, SAID: 28, LOCK: 4, JOIN: 10, LEAVE: 11, WORDS: 13, STRING: 14, GET_MEMBERS: 31, GET_OBJECT: 32 });
 const GET_MEMBERS_SUB = 1;
+/** fromSID of a property change every other caller should hear about. */
+const EVERYBODY = 0xffff;
+/** joinNet flags: 4 = a shared group object (a land's waiting room), one SID for every caller. */
+const JOIN_FLAG = Object.freeze({ SHARED: 4 });
 const BANK_REQUEST_SUB = 3;
 const TO_SID_OFFSET = 2;
 const FROM_SID_OFFSET = 4;
@@ -121,9 +120,10 @@ export class HostLogic {
     reply, log = () => {}, password = DEFAULT_PASSWORD, privilege = DEFAULT_PRIVILEGE,
     landAccess = ALL_LANDS_ACCESS, hostNumber: hostNo = DEFAULT_HOST_NUMBER,
     allocateSid = createSidAllocator(), lands = DEFAULT_LANDS, bank = new Map(), stores = DEFAULT_STORES,
+    world = new World({ allocateSid }),
   }) {
     this.config = {
-      password: password === null ? null : password.toUpperCase(), privilege, landAccess, hostNumber: hostNo, allocateSid, lands,
+      password: password === null ? null : password.toUpperCase(), privilege, landAccess, hostNumber: hostNo, lands,
     };
     /** @type {Map<string, number>} player name -> LarryBucks; shared by the sessions of one server */
     this.bank = bank;
@@ -149,13 +149,19 @@ export class HostLogic {
       // ponytail: orders are acknowledged and dropped; keep them per player when someone needs to read them.
       [handlerKey(CLIENT.SESSION_37, MALL_SUB.DELIVER), (m) => this.reply(letterDelivered(wordAt(m, TO_SID_OFFSET)))],
       [handlerKey(CLIENT_OBJECT.LOCK), (m) => this.onLock(m)],
+      [handlerKey(CLIENT.LEAVE_NET), (m) => this.onLeaveNet(m)],
+      [handlerKey(CLIENT_OBJECT.SEND), (m) => this.onUserMessage(m)],
+      [handlerKey(CLIENT_OBJECT.RSEND), (m) => this.onUserMessage(m)],
+      [handlerKey(CLIENT_OBJECT.SAID), (m) => this.world.said(m)],
       [handlerKey(CLIENT_OBJECT.JOIN), (m) => this.onGroupJoin(m)],
       [handlerKey(CLIENT_OBJECT.LEAVE), (m) => this.onGroupLeave(m)],
       [handlerKey(CLIENT_OBJECT.WORDS), (m) => this.onWordProperties(m)],
       [handlerKey(CLIENT_OBJECT.STRING), (m) => this.onStringProperty(m)],
       [handlerKey(CLIENT_OBJECT.GET_MEMBERS, GET_MEMBERS_SUB), (m) => this.onGetMembers(m)],
+      [handlerKey(CLIENT_OBJECT.GET_OBJECT), (m) => this.onGetObject(m)],
     ]);
-    this.objects = new HostObjects();
+    this.world = world;
+    this.objects = world.objects;
   }
 
   /** @param {Uint8Array} message */
@@ -167,6 +173,17 @@ export class HostLogic {
       return;
     }
     handler(message);
+  }
+
+  /** A message from another caller, routed by the world. @param {Uint8Array} message */
+  deliver(message) {
+    this.reply(message);
+  }
+
+  /** The line dropped: everything this caller had on the net goes. */
+  hangUp() {
+    this.world.disconnect(this);
+    this.stage = STAGE.DEAD;
   }
 
   /** @param {Uint8Array} message */
@@ -195,8 +212,10 @@ export class HostLogic {
 
   /** @param {Uint8Array} message */
   onJoinNet(message) {
-    const { objectId } = decodeJoinNet(message);
-    const sid = this.config.allocateSid();
+    const { objectId, flags, number, arg1, prop } = decodeJoinNet(message);
+    const isShared = (Number(flags) & JOIN_FLAG.SHARED) !== 0;
+    // ponytail: one waiting room per land type for all its instances; key by instance when the client says which.
+    const sid = this.world.joinNet(this, isShared ? `${number}/${arg1}/${prop}` : null);
     // Later joinNets register groups (waiting room, a new game); the session keeps its first SID.
     this.sid ||= sid;
     this.stage = STAGE.JOINED;
@@ -231,25 +250,52 @@ export class HostLogic {
   onGroupJoin(message) {
     const group = wordAt(message, TO_SID_OFFSET);
     const who = wordAt(message, FROM_SID_OFFSET);
-    const members = this.objects.join(group, who);
-    this.reply(groupChange(HOST_GROUP.JOINED, group, who));
-    this.reply(groupMembers(group, members));
+    this.world.claim(who, this);
+    this.world.joinGroup(group, who);
   }
 
   /** 11: a member leaves a group object. */
   onGroupLeave(message) {
     const group = wordAt(message, TO_SID_OFFSET);
     const who = wordAt(message, FROM_SID_OFFSET);
-    this.objects.leave(group, who);
-    this.reply(groupChange(HOST_GROUP.LEFT, group, who));
+    this.world.leaveGroup(group, who);
   }
 
-  /** 13: (offset, value) word pairs for object toSID. */
+  /** 2 / 3 Net send: talk and game moves, relayed to toSID (a player, or a group's other members). */
+  onUserMessage(message) {
+    this.world.relay(message, wordAt(message, TO_SID_OFFSET), wordAt(message, FROM_SID_OFFSET));
+  }
+
+  /** 9 `[9, sid, 0]` leaveNet: the object leaves its groups and its properties go. */
+  onLeaveNet(message) {
+    this.world.release(wordAt(message, TO_SID_OFFSET));
+  }
+
+  /**
+   * 13: (offset, value) word pairs for object toSID. fromSID -1 means "tell
+   * everybody": the other callers get the same message as host cmd 13 (class
+   * 105), e.g. a player's room (offset 9) changing when they sit at a table.
+   */
   onWordProperties(message) {
     const sid = wordAt(message, TO_SID_OFFSET);
     for (let at = PAYLOAD_OFFSET; at + 3 < message.length; at += 4) {
       this.objects.setProperty(sid, wordAt(message, at), wordAt(message, at + 2));
     }
+    this.tellOthersIfPublic(message);
+  }
+
+  /**
+   * A 13 / 14 property change: public ones (fromSID 0xFFFF) go to every other
+   * session, the rest to the players sharing a group with the object (a
+   * waiting room may have asked for them with 32 before they were set).
+   * @param {Uint8Array} message
+   */
+  tellOthersIfPublic(message) {
+    if (wordAt(message, FROM_SID_OFFSET) === EVERYBODY) {
+      this.world.sendToOthers(message, this);
+      return;
+    }
+    this.world.sendToGroupmates(message, wordAt(message, TO_SID_OFFSET));
   }
 
   /**
@@ -297,15 +343,29 @@ export class HostLogic {
   /** 14: one string property for object toSID. */
   onStringProperty(message) {
     this.objects.setProperty(wordAt(message, TO_SID_OFFSET), wordAt(message, PAYLOAD_OFFSET), stringAt(message, STRING_VALUE_OFFSET));
+    this.tellOthersIfPublic(message);
+  }
+
+  /** @param {Uint8Array} message @returns {number[]} property offsets, words from 6 */
+  requestedOffsets(message) {
+    const offsets = [];
+    for (let at = PAYLOAD_OFFSET; at + 1 < message.length; at += 2) {
+      offsets.push(wordAt(message, at));
+    }
+    return offsets;
+  }
+
+  /** 32 `[32, sid, from, offset...]`: one object's properties (another player who just joined), host cmd 33. */
+  onGetObject(message) {
+    const sid = wordAt(message, TO_SID_OFFSET);
+    const values = this.requestedOffsets(message).map((offset) => ({ offset, value: this.objects.property(sid, offset) }));
+    this.reply(objectProperties(sid, values, (offset) => this.objects.isStringProperty(offset)));
   }
 
   /** 31/1: the group's members with the requested properties (host cmd 31). */
   onGetMembers(message) {
     const group = wordAt(message, TO_SID_OFFSET);
-    const offsets = [];
-    for (let at = PAYLOAD_OFFSET; at + 1 < message.length; at += 2) {
-      offsets.push(wordAt(message, at));
-    }
+    const offsets = this.requestedOffsets(message);
     const members = this.objects.members(group).map((sid) => ({
       sid, values: offsets.map((offset) => ({ offset, value: this.objects.property(sid, offset) })),
     }));

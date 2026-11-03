@@ -20,7 +20,9 @@ import { hex } from './catalog.js';
  * @typedef {(packet: Packet, reply: (bytes: ArrayLike<number>) => void) => void} PacketHandler
  * @typedef {{ kind: string, detail: string }} LogEntry
  * @typedef {{ privilege?: number, firstSid?: number, linkType?: number, hostNumber?: number,
- *   lands?: string[], landAccess?: number, password?: string | null }} FakeServerOptions
+ *   lands?: string[], landAccess?: number, password?: string | null, bank?: Map<string, number>,
+ *   world?: import('./world.js').World }} FakeServerOptions
+ *   world: share one with other FakeServers to put several in-process clients on one host.
  *   password null (the default) accepts any password.
  */
 
@@ -52,6 +54,7 @@ export class FakeServer {
       landAccess: options.landAccess,
       hostNumber: options.hostNumber,
       bank: options.bank,
+      world: options.world,
       allocateSid: createSidAllocator((options.firstSid ?? DEFAULT_FIRST_SID) - 1),
       lands: options.lands?.map((name, i) => land(name, i + 1)),
     });
