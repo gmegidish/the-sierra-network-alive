@@ -206,6 +206,28 @@ export class Graphics {
     this.screen.dirty = true;
   }
 
+  /**
+   * Run `draw` on the static background inside `rect` as well as on screen, so
+   * erasing a cel over it brings the drawing back (Display text on the pic, e.g.
+   * the intro's copyright line). Cels on screen inside `rect` are not baked in.
+   * @param {import('./graphics.js').Rect} rect screen coordinates @param {() => void} draw
+   */
+  drawIntoBackground(rect, draw) {
+    if (!this.background) {
+      draw();
+      return;
+    }
+    const onScreen = this.screen.saveRect(rect);
+    this.restoreBackground(rect);
+    draw();
+    const baked = this.screen.saveRect(rect);
+    const top = Math.max(0, rect.top);
+    const left = Math.max(0, rect.left);
+    baked.planes.forEach((rows, index) => rows.forEach((row, i) => this.background.planes[index][top + i].set(row, left)));
+    this.screen.restoreRect(onScreen);
+    draw();
+  }
+
   /** Priority for a y coordinate (SCI1 priority bands, ScummVM ports.cpp kernelCoordinateToPriority). */
   coordToPriority(y) {
     const bands = this.priorityBands;

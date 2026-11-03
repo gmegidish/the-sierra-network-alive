@@ -92,10 +92,19 @@ function display(vm, [text, ...commands]) {
   if (state.saveUnder) {
     handle = g.saveBits(makeRect(box.top + port.rect.top, box.left + port.rect.left, box.bottom + port.rect.top, box.right + port.rect.left));
   }
-  if (state.back !== NONE) {
-    g.fillRect(box, 1, state.back, 0, 0, port);
+  const draw = () => {
+    if (state.back !== NONE) {
+      g.fillRect(box, 1, state.back, 0, 0, port);
+    }
+    drawTextBox(g, string, box, { align: state.align, font: state.font, color: state.color, port });
+  };
+  if (port === g.picPort && !state.saveUnder) {
+    // Text on the pic itself stays when a cel over it is erased (intro copyright under the logo).
+    const top = port.rect.top;
+    g.drawIntoBackground(makeRect(box.top + top, box.left + port.rect.left, box.bottom + top, box.right + port.rect.left), draw);
+  } else {
+    draw();
   }
-  drawTextBox(g, string, box, { align: state.align, font: state.font, color: state.color, port });
   return state.saveUnder ? handle : result;
 }
 

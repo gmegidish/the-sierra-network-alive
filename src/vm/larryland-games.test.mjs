@@ -1,7 +1,7 @@
 // CasinoLand (INN LL) end to end against the in-process host: persona,
 // waiting room, a new Slots game, the Bank of LarryLand's starting money and
 // one pull of the handle. The Random kernel is seeded, so the spin always
-// comes out the same (seed 22: a 2-buck bet wins 4; seed 2 at BlackJack: a
+// comes out the same (seed 22: a 2-buck bet wins 4; seed 11 at BlackJack: a
 // 5-buck bet, the player stands and wins 1 to 1).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,13 +21,13 @@ const AT_THE_MACHINE_FRAME = 18100;
 const RAISE_BET = Object.freeze([18200, [122, 133]]);
 const PULL_HANDLE = Object.freeze([18300, [163, 47]]);
 const REELS_STOPPED_FRAME = 19000;
-const BLACKJACK_SEED = 2;
+const BLACKJACK_SEED = 11;
 const BLACKJACK_BET = 5;
 const TO_THE_BLACKJACK_TABLE = Object.freeze([PLAY, [16500, [115, 78]]]);
 const AT_THE_TABLE_FRAME = 17400;
 const CLICK_ON_CHIPS = Object.freeze([17500, [22, 22]]);
-const STAND = Object.freeze([18350, [130, 55]]);
-const HAND_SETTLED_FRAME = 18900;
+const STAND = Object.freeze([18800, [130, 55]]);
+const HAND_SETTLED_FRAME = 19800;
 
 /** Gil in the CasinoLand waiting room, with `seed` for the Random kernel. */
 function gilInTheWaitingRoom(seed) {

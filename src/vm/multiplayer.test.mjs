@@ -90,6 +90,6 @@ test('at a two-player BlackJack table both clients see the same deal and the sam
   assert.deepEqual(pixelsIn(gil, DEALER_CARDS), pixelsIn(kris, DEALER_CARDS), 'Gil sees the dealer\'s cards Kris dealt');
   assert.deepEqual(pixelsIn(gil, KRIS_SEAT), pixelsIn(kris, KRIS_SEAT), 'Gil sees Kris\'s cards');
   playTogetherUntil([gil, kris], HAND_SETTLED_FRAME);
-  assert.equal(playerMoney(kris.vm), STARTING_BUCKS - BET, 'Kris lost his seeded hand');
+  assert.equal(playerMoney(kris.vm), STARTING_BUCKS + BET, 'Kris won his seeded hand');
   assert.equal(playerMoney(gil.vm), STARTING_BUCKS, 'Gil sat it out');
 });

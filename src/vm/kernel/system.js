@@ -94,6 +94,21 @@ function pollFrameTimer(vm) {
   return Math.max(1, now - timer.last) & 0xffff;
 }
 
+/** ScummVM's speed throttler (kGameIsRestarting): at game speed 0 the loop never
+ * Waits, so cap it at one game cycle per 2 ticks (~33 ms) like a period PC. */
+const MIN_TICKS_PER_GAME_CYCLE = 2;
+
+function throttleGameCycle(vm) {
+  const now = vm.ticks();
+  const due = (vm.lastGameCycleTick ?? now - MIN_TICKS_PER_GAME_CYCLE) + MIN_TICKS_PER_GAME_CYCLE;
+  vm.lastGameCycleTick = Math.max(now, due);
+  if (due > now) {
+    vm.sleepUntilTick = due;
+    vm.requestYield();
+  }
+  return 0;
+}
+
 const noOp = () => undefined;
 
 export const systemKernels = Object.freeze({
@@ -109,7 +124,7 @@ export const systemKernels = Object.freeze({
   ShowFree: noOp,
   StackUsage: () => 0,
   Sound: () => 0,
-  GameIsRestarting: () => 0,
+  GameIsRestarting: throttleGameCycle,
   Restart: (vm) => {
     vm.interp.halted = true;
     return undefined;
