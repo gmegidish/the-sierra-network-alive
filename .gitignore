@@ -1,0 +1,8 @@
+# Original Sierra game files (copyrighted, supply your own copy)
+disk/
+installed/
+
+# Generated output
+out/
+node_modules/
+.DS_Store

@@ -1,0 +1,23 @@
+{
+  "name": "sierra-network",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install-tsn": "node tools/install.mjs",
+    "test:install": "node --test tools/install.test.mjs",
+    "dump-resources": "node tools/dump-resources.mjs",
+    "test:resource": "node --test src/resource/*.test.mjs",
+    "server": "node server/index.js",
+    "fake-client": "node tools/fake-client.mjs",
+    "test:server": "node --test server/*.test.mjs src/net/link.test.mjs src/net/modem.test.mjs src/net/wire.test.mjs src/net/mall.test.mjs",
+    "test:vm": "node --test src/vm/*.test.mjs src/vm/kernel/*.test.mjs src/net/fake-server.test.mjs",
+    "test:audio": "node --test src/audio/*.test.mjs",
+    "render-sound": "node tools/render-sound.mjs",
+    "run-headless": "node tools/run-headless.mjs",
+    "manifest": "node tools/make-manifest.mjs"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "ws": "^8.22.1"
+  }
+}

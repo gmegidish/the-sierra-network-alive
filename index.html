@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Sierra Network</title>
+  <style>
+    :root { --bg: #101018; --fg: #c8c8d8; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg); font: 14px monospace; }
+    main { display: grid; gap: 8px; justify-items: center; }
+    canvas { width: min(960px, 100vw); aspect-ratio: 320 / 240; image-rendering: pixelated; cursor: none; background: #000; }
+  </style>
+</head>
+<body>
+  <main>
+    <canvas id="screen" width="320" height="200" aria-label="TSN screen"></canvas>
+    <p id="status" role="status">starting</p>
+  </main>
+  <script type="module" src="src/web/main.js"></script>
+</body>
+</html>
