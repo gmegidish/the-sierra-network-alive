@@ -42,6 +42,10 @@ export function wrapText(font, text, maxWidth) {
 }
 
 function wrapParagraph(font, paragraph, maxWidth) {
+  // A line that fits is kept verbatim: button labels like " OK " rely on their padding spaces.
+  if (measureText(font, paragraph) <= maxWidth) {
+    return [paragraph];
+  }
   const lines = [];
   let line = '';
   for (const word of paragraph.split(SPACE)) {
