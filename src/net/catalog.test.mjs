@@ -26,3 +26,9 @@ test('a 31/1 from the log asks for the group members\' name, room and other prop
   assert.equal(name, 'getMembers');
   assert.deepEqual(fields.offsets, [5, 9, 31, 30, 25]);
 });
+
+test('a 28 from the log is a talk line fanned out to the listed members', () => {
+  const { name, fields } = described('1c 6b 00 01 00 66 00 01 00 0f 03 01 68 65 79 00');
+  assert.equal(name, 'said');
+  assert.deepEqual([fields.me, fields.members, fields.msgType], [0x6b, [0x66], 1]);
+});

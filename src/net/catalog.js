@@ -17,6 +17,7 @@ export const CLIENT = Object.freeze({
   SEND: 2,
   RSEND: 3,
   LOCK: 4,
+  UNLOCK: 6,
   JOIN_NET: 7,
   LEAVE_NET: 9,
   JOIN_GROUP: 10,
@@ -24,6 +25,7 @@ export const CLIENT = Object.freeze({
   WORD_PROPERTIES: 13,
   STRING_PROPERTY: 14,
   OLD_LOGIN: 22,
+  SID_ACK: 26,
   SAID: 28,
   REGISTER: 30,
   GET_MEMBERS: 31,
@@ -120,8 +122,12 @@ const CLIENT_DECODERS = {
   [CLIENT.CHANGE_PASSWORD]: { name: 'changePassword', decode: subWithBytes },
   [CLIENT.SEND]: { name: 'send', decode: objectMessage },
   [CLIENT.RSEND]: { name: 'rsend', decode: objectMessage },
-  [CLIENT.SAID]: { name: 'said', decode: objectMessage },
+  [CLIENT.SAID]: { name: 'said', decode: saidMessage },
   [CLIENT.LOCK]: { name: 'lock', decode: objectWords },
+  [CLIENT.UNLOCK]: { name: 'unlock', decode: objectWords },
+  [CLIENT.LEAVE_NET]: { name: 'leaveNet', decode: objectWords },
+  // ponytail: sent by Player (module 59953) as [26, sid, sid] when host cmd 8 assigns a SID; the name is a guess.
+  [CLIENT.SID_ACK]: { name: 'sidAck?', decode: objectWords },
   [CLIENT.JOIN_GROUP]: { name: 'joinGroup', decode: objectWords },
   [CLIENT.LEAVE_GROUP]: { name: 'leaveGroup', decode: objectWords },
   [CLIENT.WORD_PROPERTIES]: { name: 'setWordProperties', decode: wordProperties },
@@ -156,6 +162,14 @@ function objectWords(bytes) {
 function objectMessage(bytes) {
   const [msgType] = wordsFrom(bytes.subarray(OBJECT_PAYLOAD_OFFSET, OBJECT_PAYLOAD_OFFSET + 2), 0);
   return { ...objectHead(bytes), msgType, body: hex(bytes.subarray(OBJECT_PAYLOAD_OFFSET + 2)) };
+}
+
+/** 28 [28, me w, count w, members w[count], msgType w, data] (world.js SAID): no sub byte. @param {Uint8Array} bytes */
+function saidMessage(bytes) {
+  const [me, count] = wordsFrom(bytes.subarray(1, 5), 0);
+  const membersEnd = 5 + count * 2;
+  const [msgType] = wordsFrom(bytes.subarray(membersEnd, membersEnd + 2), 0);
+  return { type: bytes[0], me, members: wordsFrom(bytes.subarray(5, membersEnd), 0), msgType, body: hex(bytes.subarray(membersEnd + 2)) };
 }
 
 /** 13: (offset, value) word pairs. @param {Uint8Array} bytes */
