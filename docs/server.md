@@ -126,7 +126,7 @@ const link = new LinkEndpoint({
 | 37/31 `[37, 31, sid, boxLow, boxHigh, letterLow, letterHigh]` (37/25 the same) | the letter's text (an order form) |
 | 37/24 deliver a letter `bbwwwawwawaaa` (an order) | cmd 0 `00 00 <sid w> 25 18` (whichCmd 37, whichSub 24) |
 | 36/7 `bbw+ [36, 7, stampLow, stampHigh]` (INN: gameinfo.tim) | `24 07 00 00`: short form, "your gameinfo.cfg is current". A longer one (stamp words + file bytes) would be written to gameinfo.tim/.cfg; either releases the dial script (module 101 block 43 state 7) |
-| 2/0 `wwwwa` INVITE (msgType 12) to a bot | the bot answers `wwww [2, retAddress, bot, 13 ACCEPT]` to the inviter's invite room (data word 2 of the INVITE) |
+| 2/0 `wwwwa` INVITE (msgType 12) to a bot | the bot answers GET_SID `wwwww [2, retAddress, bot, 56, botInviteRoom]` and ACCEPT `wwww [2, retAddress, bot, 13]` to the inviter's invite room (data word 2 of the INVITE); on START_GAME (58) to its invite room it joins the game group, see "Bots" |
 | anything else | nothing; it is logged |
 
 **Land instances.** The host lists the INN lands it runs, four instances each,
@@ -263,14 +263,38 @@ retried, so delivery order between different senders does not matter.
 
 **Bots** (`--bots N` / `BOTS=N`, src/net/bots.js): host-side players with
 names and a plain face. They join every waiting room when it opens and answer
-talk with a canned line. They accept game invitations the way an invitee does
-in the INN invite rooms (installed/INN/913.SO, SierraLand modules 905-907):
-INVITE is msgType 12, its data is `whatGame, numInvitees, retAddress,
-invitee SIDs...`, and the answer `TSN_SEND "wwww" SN_SEND retAddress mySid
-ACCEPT(13)` goes to retAddress (DECLINE is 14, UNKNOWN_GAME 999). The inviter
-then opens the game and shows "Waiting to start...": the bot never joins the
-game group or moves, so the game does not start (a seat needs a client that
-plays).
+talk with a canned line. Invited to a game, a bot does what an invitee's
+client does (installed/INN/913.SO, SierraLand invite rooms 905-907; the SL
+msgTypes 56 and 58 were read from two headless clients, Gil inviting Kris):
+
+| step | inviter's client | invitee (Kris, or the bot) |
+|---|---|---|
+| 1 | joinNet its invite room R, lock 4 `[R, me, invitee]`, INVITE `[2, invitee, me, 12, whatGame, numInvitees, R, invitees..., me, colors]` | |
+| 2 | | joinNet its own invite room R2, GET_SID `wwwww [2, R, me, 56, R2]` |
+| 3 | GET_UPDATE (30) to R2 | (a person clicks Accept) ACCEPT `wwww [2, R, me, 13]` |
+| 4 | everybody accepted: joinNet the game group G (`[7, 0, obj, 2, n, -2, 64]`), unlock 6, START_GAME `[2, R2, me, 58, G, numPlayers]`, then 30 `[30, G]`, join 10 `[10, G, me]`, 12 `[12, G, me]` and "Waiting to start...." until G has numPlayers members | |
+| 5 | | 30 `[30, G]`, join 10 `[10, G, me]`, 12 `[12, G, me]`, leaveNet R2 `[9, R2, 0]`, public 13 property 9 = whatGame |
+| 6 | both newRoom to the game and ask each other's properties with 32 | |
+
+The bot does steps 2, 3 (at once) and 5. It joins G only after the inviter
+is in it (World `onGroupJoined`), and its SIDs (player and invite rooms) come
+from 0x7000 up, above every caller's: the SierraLand games sort the game group
+by SID and the lowest member leads (Boogers' first player sends the seed,
+msgType 1001), which a bot can't do. Its SierraLand persona needs property 19
+(knowAppearance) = 1, or the game never gets past loading; it also sets 17
+(gameSkillInt) and 22 (age). SierraLand's Player offsets differ from
+CasinoLand's (SL 17 skills, 19 knowAppearance, 22 age, 23 city; CasinoLand 18
+skills, 20 knowAppearance, 23 age, 24 city; module 59953's propDict). When
+somebody leaves a game group the bot sits in, it leaves too and shows the
+waiting room (property 9 = 120) again.
+
+Games that start with a bot (inviter seated with the bot as opponent):
+SneakATac, Boogers, MiniGolf, Stratego, Yacht, RocketQuiz, Graffiti and the
+Chat Room. The bot never moves, so a game waits on the bot's turn (SneakATac's
+coin toss may give it the first move). PaintBall ("no paintball maps") and
+Red Baron (2400 baud check) stop in the inviter's client before an invitation
+is sent; 3-D Golf gets as far as the switch to its own DOS program, which the
+port can't run.
 
 ## Findings against docs/protocol.md
 

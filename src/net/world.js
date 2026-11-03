@@ -45,6 +45,8 @@ export class World {
     this.sharedGroups = new Map();
     /** @type {(group: number) => void} called when a waiting room opens (bots join it) */
     this.onSharedGroup = () => {};
+    /** @type {(group: number, who: number) => void} called after somebody joined a group (bots wait for the inviter) */
+    this.onGroupJoined = () => {};
   }
 
   /**
@@ -152,6 +154,7 @@ export class World {
     const members = this.objects.join(group, who);
     this.sendToMembers(group, groupChange(HOST_GROUP.JOINED, group, who));
     this.sendToMembers(group, groupMembers(group, members));
+    this.onGroupJoined(group, who);
   }
 
   /** `who` leaves `group`; it and the others hear it (11), the others get the new list (12). @param {number} group @param {number} who */
